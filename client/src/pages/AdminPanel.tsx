@@ -907,9 +907,12 @@ export default function AdminPanel() {
                 y otros parámetros del sistema.
               </p>
 
-              <Button className="mt-6 bg-[#1E3A8A]">
-                Guardar Cambios
-              </Button>
+             <Card className="p-8 border-2 border-gray-200">
+  <p className="text-gray-600">
+    La configuración global del sistema se gestionará desde las
+    herramientas internas correspondientes.
+  </p>
+</Card>
 
             </Card>
 

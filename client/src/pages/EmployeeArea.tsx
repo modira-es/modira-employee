@@ -3,7 +3,7 @@ import { supabase } from "@/lib/supabase";
 import { useEffect, useState } from "react";
 import { useLocation } from "wouter";
 import EmployeeAreaHeader from "@/components/EmployeeAreaHeader";
-import EmployeeProjects from "@/components/EmployeeProjects";
+import EmployeeProjects from "@/pages/EmployeeProjects";
 import { Textarea } from "@/components/ui/textarea";
 
 import { Card } from "@/components/ui/card";

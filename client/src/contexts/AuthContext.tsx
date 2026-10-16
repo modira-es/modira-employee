@@ -4,11 +4,52 @@ import React, {
   useEffect,
   useState,
 } from "react";
+
 import {
   User,
   Session,
 } from "@supabase/supabase-js";
+
 import { supabase } from "@/lib/supabase";
+
+/**
+ * ============================================================
+ * WORKER RBAC
+ * ============================================================
+ */
+
+export type WorkerRoleCode =
+  | "direction"
+  | "commercial"
+  | "developer"
+  | "support"
+  | "accounting";
+
+export interface WorkerRole {
+  role_id: string;
+  role_code: WorkerRoleCode;
+  role_name: string;
+  role_description: string | null;
+  is_system_role: boolean;
+  is_active: boolean;
+}
+
+/**
+ * Los permisos proceden de Supabase.
+ */
+export type WorkerPermission = string;
+
+type Worker = {
+  id: string;
+  auth_user_id: string;
+  is_active: boolean;
+};
+
+/**
+ * ============================================================
+ * AUTH CONTEXT TYPE
+ * ============================================================
+ */
 
 interface AuthContextType {
   user: User | null;
@@ -16,30 +57,15 @@ interface AuthContextType {
   loading: boolean;
   isRecoverySession: boolean;
 
-  signUp: (
-    email: string,
-    password: string,
-    nombre: string,
-    empresa?: string,
-    captchaToken?: string
-  ) => Promise<{
-    success: boolean;
-    error?: string;
-  }>;
+  worker: Worker | null;
 
-  completeRegistrationLegalRequirements: (
-  termsAccepted: boolean,
-  privacyAcknowledged: boolean
-) => Promise<{
-  success: boolean;
-  error?: string;
-}>;
+  roles: WorkerRole[];
 
-  getRegistrationStatus: () => Promise<{
-    success: boolean;
-    status?: string;
-    error?: string;
-  }>;
+  permissions: WorkerPermission[];
+
+  hasPermission: (
+    permission: WorkerPermission
+  ) => boolean;
 
   signIn: (
     email: string,
@@ -76,6 +102,12 @@ export const AuthContext =
     undefined
   );
 
+/**
+ * ============================================================
+ * AUTH PROVIDER
+ * ============================================================
+ */
+
 export function AuthProvider({
   children,
 }: {
@@ -93,215 +125,397 @@ export function AuthProvider({
   const [isRecoverySession, setIsRecoverySession] =
     useState(false);
 
+  const [worker, setWorker] =
+    useState<Worker | null>(null);
+
+  const [roles, setRoles] =
+    useState<WorkerRole[]>([]);
+
+  const [permissions, setPermissions] =
+    useState<WorkerPermission[]>([]);
+
+  /**
+   * ==========================================================
+   * CLEAR WORKER RBAC
+   * ==========================================================
+   */
+
+  const clearWorkerRBAC = () => {
+    setWorker(null);
+    setRoles([]);
+    setPermissions([]);
+  };
+
+  /**
+   * ==========================================================
+   * LOAD WORKER RBAC
+   * ==========================================================
+   *
+   * Los roles y los permisos se consultan en Supabase.
+   *
+   * No se mantiene un catálogo de permisos por rol
+   * duplicado en el frontend.
+   */
+
+  const loadWorkerRBAC = async (
+    authUser: User | null
+  ): Promise<void> => {
+    if (!authUser) {
+      clearWorkerRBAC();
+      return;
+    }
+
+    try {
+      /**
+       * ------------------------------------------------------
+       * 1. Obtener el trabajador autenticado
+       * ------------------------------------------------------
+       */
+
+      const {
+        data: workerData,
+        error: workerError,
+      } = await supabase
+        .from("workers")
+        .select(
+          "id, auth_user_id, is_active"
+        )
+        .eq(
+          "auth_user_id",
+          authUser.id
+        )
+        .maybeSingle();
+
+      if (workerError) {
+        console.error(
+          "[Auth] Error loading worker:",
+          workerError
+        );
+
+        clearWorkerRBAC();
+        return;
+      }
+
+      /**
+       * Si no existe un trabajador activo,
+       * no se habilita el área de empleados.
+       */
+
+      if (
+        !workerData ||
+        !workerData.is_active
+      ) {
+        clearWorkerRBAC();
+        return;
+      }
+
+      setWorker({
+        id: workerData.id,
+        auth_user_id: workerData.auth_user_id,
+        is_active: workerData.is_active,
+      });
+
+      /**
+       * ------------------------------------------------------
+       * 2. Obtener los roles mediante la RPC existente
+       * ------------------------------------------------------
+       */
+
+      const {
+        data: rolesData,
+        error: rolesError,
+      } = await supabase.rpc(
+        "get_worker_roles",
+        {
+          p_worker_auth_user_id: authUser.id,
+        }
+      );
+
+      if (rolesError) {
+        console.error(
+          "[Auth] Error loading worker roles:",
+          rolesError
+        );
+
+        setRoles([]);
+        setPermissions([]);
+
+        return;
+      }
+
+      /**
+       * Normalizamos los campos por compatibilidad
+       * con las distintas formas de respuesta.
+       */
+
+      const activeRoles: WorkerRole[] =
+        (rolesData ?? [])
+          .filter(
+            (role: any) =>
+              role.is_active === true
+          )
+          .map(
+            (role: any): WorkerRole => ({
+              role_id:
+                role.role_id ?? role.id,
+
+              role_code:
+                role.role_code ?? role.code,
+
+              role_name:
+                role.role_name ?? role.name,
+
+              role_description:
+                role.role_description ??
+                role.description ??
+                null,
+
+              is_system_role:
+                role.is_system_role ?? false,
+
+              is_active:
+                role.is_active === true,
+            })
+          )
+          .filter(
+            (role: WorkerRole) =>
+              Boolean(role.role_id) &&
+              Boolean(role.role_code) &&
+              Boolean(role.role_name)
+          );
+
+      setRoles(activeRoles);
+
+      /**
+       * ------------------------------------------------------
+       * 3. Obtener los permisos reales desde Supabase
+       * ------------------------------------------------------
+       *
+       * Esta RPC ya existe en el backend.
+       *
+       * Devuelve los permisos efectivos del trabajador
+       * autenticado a partir de sus roles y permisos.
+       */
+
+      const {
+        data: permissionsData,
+        error: permissionsError,
+      } = await supabase.rpc(
+        "get_current_worker_permissions"
+      );
+
+      if (permissionsError) {
+        console.error(
+          "[Auth] Error loading worker permissions:",
+          permissionsError
+        );
+
+        /**
+         * Si no podemos confirmar los permisos,
+         * no concedemos permisos por defecto.
+         */
+
+        setPermissions([]);
+        return;
+      }
+
+      /**
+       * La RPC devuelve filas con permission_code.
+       * También normalizamos el resultado por si
+       * Supabase devuelve directamente valores de texto.
+       */
+
+      const permissionSet =
+        new Set<WorkerPermission>();
+
+      for (const item of permissionsData ?? []) {
+        const permissionCode =
+          typeof item === "string"
+            ? item
+            : item?.permission_code;
+
+        if (
+          typeof permissionCode === "string" &&
+          permissionCode.trim() !== ""
+        ) {
+          permissionSet.add(permissionCode);
+        }
+      }
+
+      setPermissions(
+        Array.from(permissionSet)
+      );
+    } catch (error) {
+      console.error(
+        "[Auth] Error loading worker RBAC:",
+        error
+      );
+
+      clearWorkerRBAC();
+    }
+  };
+
+  /**
+   * ==========================================================
+   * PERMISSION CHECK
+   * ==========================================================
+   *
+   * La autorización visual se basa en los permisos
+   * obtenidos desde Supabase.
+   *
+   * La protección real de datos y operaciones debe seguir
+   * estando en RLS y en las RPC del backend.
+   */
+
+  const hasPermission = (
+    permission: WorkerPermission
+  ): boolean => {
+    return permissions.includes(permission);
+  };
+
+  /**
+   * ==========================================================
+   * INITIALIZE AUTH
+   * ==========================================================
+   */
+
   useEffect(() => {
+    let mounted = true;
+
     const initializeAuth = async () => {
       try {
         const {
-          data: { session },
+          data: {
+            session: currentSession,
+          },
+          error,
         } = await supabase.auth.getSession();
 
-        setSession(session);
-        setUser(session?.user ?? null);
+        if (!mounted) {
+          return;
+        }
+
+        if (error) {
+          console.error(
+            "[Auth] Error getting session:",
+            error
+          );
+        }
+
+        setSession(currentSession);
+
+        setUser(
+          currentSession?.user ?? null
+        );
+
+        await loadWorkerRBAC(
+          currentSession?.user ?? null
+        );
+
+        if (!mounted) {
+          return;
+        }
+
+        /**
+         * Detectar sesiones de recuperación de contraseña.
+         */
+
+        const hashParams =
+          new URLSearchParams(
+            window.location.hash.replace(
+              /^#/,
+              ""
+            )
+          );
+
+        const recoveryType =
+          hashParams.get("type") === "recovery";
+
+        if (
+          recoveryType &&
+          currentSession
+        ) {
+          setIsRecoverySession(true);
+        }
       } catch (error) {
+        if (!mounted) {
+          return;
+        }
+
         console.error(
           "[Auth] Error initializing auth:",
           error
         );
+
+        clearWorkerRBAC();
       } finally {
-        setLoading(false);
+        if (mounted) {
+          setLoading(false);
+        }
       }
     };
 
     initializeAuth();
 
-    const {
-      data: { subscription },
-    } = supabase.auth.onAuthStateChange(
-      (event, session) => {
-        setSession(session);
-        setUser(session?.user ?? null);
+    /**
+     * Escuchar los cambios de autenticación.
+     */
 
-        if (event === "PASSWORD_RECOVERY") {
+    const {
+      data: {
+        subscription,
+      },
+    } = supabase.auth.onAuthStateChange(
+      async (
+        event,
+        currentSession
+      ) => {
+        if (!mounted) {
+          return;
+        }
+
+        setSession(currentSession);
+
+        setUser(
+          currentSession?.user ?? null
+        );
+
+        if (
+          event === "SIGNED_IN" ||
+          event === "TOKEN_REFRESHED" ||
+          event === "USER_UPDATED"
+        ) {
+          await loadWorkerRBAC(
+            currentSession?.user ?? null
+          );
+        }
+
+        if (
+          event === "PASSWORD_RECOVERY"
+        ) {
           setIsRecoverySession(true);
+        }
+
+        if (
+          event === "SIGNED_OUT"
+        ) {
+          setIsRecoverySession(false);
+          clearWorkerRBAC();
         }
       }
     );
 
     return () => {
-      subscription?.unsubscribe();
+      mounted = false;
+      subscription.unsubscribe();
     };
   }, []);
 
-  const signUp = async (
-    email: string,
-    password: string,
-    nombre: string,
-    empresa?: string,
-    captchaToken?: string
-  ): Promise<{
-    success: boolean;
-    error?: string;
-  }> => {
-    try {
-      const { data, error } =
-  await supabase.auth.signUp({
-    email,
-    password,
-    options: {
-      emailRedirectTo: `${window.location.origin}/auth`,
-      data: {
-        nombre,
-        empresa: empresa || null,
-      },
-      captchaToken,
-    },
-  });
-
-      if (error) {
-        return {
-          success: false,
-          error: error.message,
-        };
-      }
-
-      if (!data.user) {
-        return {
-          success: false,
-          error: "Error creating user",
-        };
-      }
-
-      return {
-        success: true,
-      };
-    } catch (error) {
-      console.error(
-        "[Auth] Sign up error:",
-        error
-      );
-
-      return {
-        success: false,
-        error: "Error during sign up",
-      };
-    }
-  };
-
-  /*
-   * Completa los requisitos legales del registro.
-   *
-   * Esta RPC debe ejecutarse DESPUÉS de confirmar el correo
-   * y disponer de una sesión autenticada.
-   *
-   * La BD obtiene las versiones vigentes de los documentos y
-   * registra los eventos legales. El frontend no envía
-   * document_id, versión, hash, IP ni user-agent.
+  /**
+   * ==========================================================
+   * LOGIN
+   * ==========================================================
    */
-  const completeRegistrationLegalRequirements = async (
-  termsAccepted: boolean,
-  privacyAcknowledged: boolean
-): Promise<{
-    success: boolean;
-    error?: string;
-  }> => {
-    try {
-      const {
-        data: { session: currentSession },
-      } = await supabase.auth.getSession();
-
-      if (!currentSession) {
-        return {
-          success: false,
-          error:
-            "Debes confirmar tu correo electrónico e iniciar sesión antes de completar el registro.",
-        };
-      }
-
-      const { error } = await supabase.rpc(
-  "complete_registration_legal_requirements",
-  {
-    p_terms_accepted: true,
-    p_privacy_acknowledged: true,
-  }
-);
-
-      if (error) {
-        return {
-          success: false,
-          error: error.message,
-        };
-      }
-
-      return {
-        success: true,
-      };
-    } catch (error) {
-      console.error(
-        "[Auth] Error completing legal registration:",
-        error
-      );
-
-      return {
-        success: false,
-        error:
-          "No se han podido completar los requisitos legales del registro.",
-      };
-    }
-  };
-
-  /*
-   * Consulta únicamente el estado legal de la cuenta.
-   *
-   * Se utiliza después del login porque un usuario con
-   * pending_legal no puede depender de la lectura directa
-   * de profiles.
-   */
-  const getRegistrationStatus = async (): Promise<{
-    success: boolean;
-    status?: string;
-    error?: string;
-  }> => {
-    try {
-      const {
-        data: { session: currentSession },
-      } = await supabase.auth.getSession();
-
-      if (!currentSession) {
-        return {
-          success: false,
-          error: "No hay una sesión activa.",
-        };
-      }
-
-      const { data, error } =
-        await supabase.rpc(
-          "get_current_registration_status"
-        );
-
-      if (error) {
-        return {
-          success: false,
-          error: error.message,
-        };
-      }
-
-      return {
-        success: true,
-        status: data,
-      };
-    } catch (error) {
-      console.error(
-        "[Auth] Error getting registration status:",
-        error
-      );
-
-      return {
-        success: false,
-        error:
-          "No se ha podido comprobar el estado del registro.",
-      };
-    }
-  };
 
   const signIn = async (
     email: string,
@@ -312,12 +526,24 @@ export function AuthProvider({
     error?: string;
   }> => {
     try {
+      const cleanEmail = email.trim();
+
+      if (!cleanEmail || !password) {
+        return {
+          success: false,
+          error:
+            "Introduce tu correo electrónico y contraseña.",
+        };
+      }
+
       const { error } =
         await supabase.auth.signInWithPassword({
-          email,
+          email: cleanEmail,
           password,
           options: {
-            captchaToken,
+            ...(captchaToken
+              ? { captchaToken }
+              : {}),
           },
         });
 
@@ -339,10 +565,16 @@ export function AuthProvider({
 
       return {
         success: false,
-        error: "Error during sign in",
+        error: "Error al iniciar sesión.",
       };
     }
   };
+
+  /**
+   * ==========================================================
+   * LOGOUT
+   * ==========================================================
+   */
 
   const signOut = async (): Promise<{
     success: boolean;
@@ -359,6 +591,12 @@ export function AuthProvider({
         };
       }
 
+      setUser(null);
+      setSession(null);
+      setIsRecoverySession(false);
+
+      clearWorkerRBAC();
+
       return {
         success: true,
       };
@@ -370,10 +608,16 @@ export function AuthProvider({
 
       return {
         success: false,
-        error: "Error during sign out",
+        error: "Error al cerrar sesión.",
       };
     }
   };
+
+  /**
+   * ==========================================================
+   * RECUPERACIÓN DE CONTRASEÑA
+   * ==========================================================
+   */
 
   const resetPassword = async (
     email: string,
@@ -383,13 +627,26 @@ export function AuthProvider({
     error?: string;
   }> => {
     try {
+      const cleanEmail = email.trim();
+
+      if (!cleanEmail) {
+        return {
+          success: false,
+          error:
+            "Introduce tu correo electrónico.",
+        };
+      }
+
       const { error } =
         await supabase.auth.resetPasswordForEmail(
-          email,
+          cleanEmail,
           {
             redirectTo:
-              `${window.location.origin}/auth/reset-password`,
-            captchaToken,
+              `${window.location.origin}/reset-password`,
+
+            ...(captchaToken
+              ? { captchaToken }
+              : {}),
           }
         );
 
@@ -412,10 +669,16 @@ export function AuthProvider({
       return {
         success: false,
         error:
-          "Error requesting password reset",
+          "Error al solicitar la recuperación de contraseña.",
       };
     }
   };
+
+  /**
+   * ==========================================================
+   * ACTUALIZAR CONTRASEÑA
+   * ==========================================================
+   */
 
   const updatePassword = async (
     newPassword: string
@@ -424,6 +687,14 @@ export function AuthProvider({
     error?: string;
   }> => {
     try {
+      if (!newPassword) {
+        return {
+          success: false,
+          error:
+            "La nueva contraseña no puede estar vacía.",
+        };
+      }
+
       const { error } =
         await supabase.auth.updateUser({
           password: newPassword,
@@ -436,6 +707,8 @@ export function AuthProvider({
         };
       }
 
+      setIsRecoverySession(false);
+
       return {
         success: true,
       };
@@ -447,10 +720,17 @@ export function AuthProvider({
 
       return {
         success: false,
-        error: "Error updating password",
+        error:
+          "Error al actualizar la contraseña.",
       };
     }
   };
+
+  /**
+   * ==========================================================
+   * PROVIDER
+   * ==========================================================
+   */
 
   return (
     <AuthContext.Provider
@@ -459,9 +739,12 @@ export function AuthProvider({
         session,
         loading,
         isRecoverySession,
-        signUp,
-        completeRegistrationLegalRequirements,
-        getRegistrationStatus,
+
+        worker,
+        roles,
+        permissions,
+        hasPermission,
+
         signIn,
         signOut,
         resetPassword,
@@ -472,6 +755,12 @@ export function AuthProvider({
     </AuthContext.Provider>
   );
 }
+
+/**
+ * ============================================================
+ * useAuth
+ * ============================================================
+ */
 
 export function useAuth() {
   const context = useContext(AuthContext);

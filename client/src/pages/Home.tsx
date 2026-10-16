@@ -1,2491 +1,2743 @@
-import { Button } from "@/components/ui/button";
-import { Card } from "@/components/ui/card";
-import Header from "@/components/Header";
-import HowWeWork from "@/components/HowWeWork";
-import { AIChatBot } from "@/components/AIChatBot";
-import {
-  Accordion,
-  AccordionContent,
-  AccordionItem,
-  AccordionTrigger,
-  
-} from "@/components/ui/accordion";
-import {
-  CheckCircle,
-  Zap,
-  BarChart3,
-  Cog,
-  ArrowRight,
-  Star,
-  TrendingUp,
-  Clock,
-  AlertCircle,
-  CheckCircle2,
-  Lightbulb,
-  Wrench,
-  Workflow,
-  Cloud,
-  Database,
-  MessageCircle,
-  CalendarDays,
-  Webhook,
-  Network,
-  ShieldCheck,
-  Target,
-  Users,
-  Activity,
-  Instagram,
-  Linkedin,
-} from "lucide-react";
-import { useEffect, useState } from "react";
+import { useAuth } from "@/contexts/AuthContext";
 import { supabase } from "@/lib/supabase";
+import { useLocation } from "wouter";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  Activity,
+  AlertCircle,
+  ArrowRight,
+  BarChart3,
+  Bell,
+  BriefcaseBusiness,
+  Building2,
+  CalendarDays,
+  CheckCircle2,
+  ChevronDown,
+  CircleDollarSign,
+  Clock3,
+  CreditCard,
+  FileText,
+  Flag,
+  FolderKanban,
+  Menu,
+  RefreshCw,
+  Ticket,
+  Users,
+  X,
+  Zap,
+} from "lucide-react";
+import {
+  addDays,
+  addMonths,
+  addQuarters,
+  addWeeks,
+  endOfDay,
+  endOfMonth,
+  endOfQuarter,
+  endOfYear,
+  format,
+  formatDistanceToNow,
+  isBefore,
+  isWithinInterval,
+  startOfDay,
+  startOfMonth,
+  startOfQuarter,
+  startOfYear,
+} from "date-fns";
+import { es } from "date-fns/locale";
 
-function IntegrationFlow() {
-  const leftIntegrations = [
-    {
-      name: "Make",
-      description: "Automatización visual",
-      icon: Workflow,
-      color: "#9333EA",
-      side: "left",
-    },
-    {
-      name: "n8n",
-      description: "Workflows avanzados",
-      icon: Network,
-      color: "#F43F5E",
-      side: "left",
-    },
-    {
-      name: "APIs & Webhooks",
-      description: "Conecta servicios externos",
-      icon: Webhook,
-      color: "#2563EB",
-      side: "left",
-    },
-  ];
+type DashboardPeriod =
+  | "today"
+  | "7d"
+  | "30d"
+  | "month"
+  | "previousMonth"
+  | "quarter"
+  | "year"
+  | "custom";
 
-  const rightIntegrations = [
-    {
-      name: "Google Workspace",
-      description: "Docs, Sheets, Gmail y más",
-      icon: Cloud,
-      color: "#4285F4",
-      side: "right",
-    },
-    {
-      name: "Airtable",
-      description: "Bases de datos flexibles",
-      icon: Database,
-      color: "#F59E0B",
-      side: "right",
-    },
-    {
-      name: "WhatsApp Business",
-      description: "Mensajería y atención",
-      icon: MessageCircle,
-      color: "#22C55E",
-      side: "right",
-    },
-  ];
+type ChartGranularity = "auto" | "day" | "week" | "month" | "quarter";
 
-  const benefits = [
-    {
-      icon: TrendingUp,
-      title: "Más eficiencia",
-      description: "Automatiza tareas repetitivas",
-    },
-    {
-      icon: Target,
-      title: "Mayor precisión",
-      description: "Reduce errores manuales",
-    },
-    {
-      icon: Users,
-      title: "Mejor colaboración",
-      description: "Conecta equipos y herramientas",
-    },
-    {
-      icon: Activity,
-      title: "Información en tiempo real",
-      description: "Datos siempre actualizados",
-    },
-    {
-      icon: ShieldCheck,
-      title: "Seguro y escalable",
-      description: "Preparado para crecer contigo",
-    },
-  ];
+export type EmployeeHomeSection =
+  | "dashboard"
+  | "companies"
+  | "quotations"
+  | "invoices"
+  | "payments"
+  | "projects"
+  | "support"
+  | "ai"
+  | "notifications"
+  | "activity"
+  | "audits"
+  | "companyChanges"
+  | "maintenance"
+  | "automations"
+  | "automationRuns"
+  | "calendar";
+
+export type EmployeeHomeNewAction =
+  | "quotation"
+  | "project"
+  | "invoice";
+
+interface ProjectRow {
+  id: string;
+  nombre: string;
+  descripcion?: string | null;
+  estado?: string | null;
+  company_id?: string | null;
+  fecha_inicio?: string | null;
+  fecha_fin?: string | null;
+  updated_at?: string | null;
+}
+
+interface CompanyRow {
+  id: string;
+  company_name?: string | null;
+  created_at?: string | null;
+}
+
+interface QuotationRow {
+  id: string;
+  company_id?: string | null;
+  project_id?: string | null;
+  numero_presupuesto?: string | null;
+  titulo?: string | null;
+  precio_base?: number | null;
+  precio_total?: number | null;
+  iva_porcentaje?: number | null;
+  estado?: string | null;
+  fecha_emision?: string | null;
+  fecha_validez?: string | null;
+  created_at?: string | null;
+}
+
+interface InvoiceRow {
+  id: string;
+  company_id?: string | null;
+  project_id?: string | null;
+  numero_factura?: string | null;
+  monto?: number | null;
+  subtotal?: number | null;
+  iva_importe?: number | null;
+  importe_a_pagar?: number | null;
+  irpf_importe?: number | null;
+  estado?: string | null;
+  fecha_emision?: string | null;
+  fecha_vencimiento?: string | null;
+  fecha_pago?: string | null;
+  created_at?: string | null;
+}
+
+interface PaymentRow {
+  id: string;
+  company_id?: string | null;
+  invoice_id?: string | null;
+  amount?: number | null;
+  currency?: string | null;
+  status?: string | null;
+  paid_at?: string | null;
+  created_at?: string | null;
+  description?: string | null;
+}
+
+interface TicketRow {
+  id: string;
+  company_id?: string | null;
+  titulo?: string | null;
+  estado?: string | null;
+  prioridad?: string | null;
+  fecha_creacion?: string | null;
+  created_at?: string | null;
+  updated_at?: string | null;
+}
+
+interface MilestoneRow {
+  id: string;
+  project_id?: string | null;
+  nombre?: string | null;
+  fecha_prevista?: string | null;
+  orden?: number | null;
+  estado?: string | null;
+  completed_at?: string | null;
+  created_at?: string | null;
+  updated_at?: string | null;
+}
+
+interface ProgressRow {
+  project_id: string;
+  total_milestones?: number | null;
+  completed_milestones?: number | null;
+  progress_percentage?: number | null;
+}
+
+interface UpdateRow {
+  id: string;
+  project_id?: string | null;
+  titulo?: string | null;
+  contenido?: string | null;
+  created_by?: string | null;
+  created_at?: string | null;
+  updated_at?: string | null;
+}
+
+interface ActivityRow {
+  id: string;
+  user_id?: string | null;
+  company_id?: string | null;
+  action: string;
+  resource_type: string;
+  resource_id?: string | null;
+  description?: string | null;
+  metadata?: Record<string, unknown> | null;
+  created_at: string;
+}
+
+interface ContractRow {
+  id: string;
+  company_id?: string | null;
+  nombre_plan?: string | null;
+  precio?: number | null;
+  periodicidad?: string | null;
+  estado?: string | null;
+  fecha_inicio?: string | null;
+  fecha_fin?: string | null;
+  created_at?: string | null;
+}
+
+interface ChangeRequestRow {
+  id: string;
+  user_id?: string | null;
+  current_company_id?: string | null;
+  requested_company_id?: string | null;
+  reason?: string | null;
+  status?: string | null;
+  reviewed_by?: string | null;
+  reviewed_at?: string | null;
+  review_notes?: string | null;
+  created_at?: string | null;
+}
+
+interface ProfileRow {
+  id: string;
+  nombre?: string | null;
+  rol?: string | null;
+  company_id?: string | null;
+  status?: string | null;
+  created_at?: string | null;
+}
+
+interface AuditRequestRow {
+  id: string;
+  nombre?: string | null;
+  empresa?: string | null;
+  estado?: string | null;
+  created_at?: string | null;
+}
+
+interface UpcomingEvent {
+  id: string;
+  kind: "invoice" | "project" | "milestone" | "contract" | "quotation";
+  title: string;
+  subtitle: string;
+  date: Date;
+  value?: number;
+  section: EmployeeHomeSection;
+}
+
+interface AutomationRunRow {
+  id: string;
+  automation_id?: string | null;
+  company_id?: string | null;
+  estado?: string | null;
+  inicio?: string | null;
+  finalizacion?: string | null;
+  duracion_ms?: number | null;
+  error?: string | null;
+  created_at?: string | null;
+}
+
+interface DashboardData {
+  workerName: string;
+  companies: CompanyRow[];
+  projects: ProjectRow[];
+  quotations: QuotationRow[];
+  invoices: InvoiceRow[];
+  payments: PaymentRow[];
+  tickets: TicketRow[];
+  milestones: MilestoneRow[];
+  progress: ProgressRow[];
+  updates: UpdateRow[];
+  activity: ActivityRow[];
+  contracts: ContractRow[];
+  changeRequests: ChangeRequestRow[];
+  profiles: ProfileRow[];
+  auditRequests: AuditRequestRow[];
+  automationRuns: AutomationRunRow[];
+}
+
+interface PeriodRange {
+  start: Date;
+  end: Date;
+  label: string;
+}
+
+const euro = new Intl.NumberFormat("es-ES", {
+  style: "currency",
+  currency: "EUR",
+  maximumFractionDigits: 2,
+});
+
+const compactNumber = new Intl.NumberFormat("es-ES");
+
+const periodLabels: Record<DashboardPeriod, string> = {
+  today: "Hoy",
+  "7d": "Últimos 7 días",
+  "30d": "Últimos 30 días",
+  month: "Este mes",
+  previousMonth: "Mes anterior",
+  quarter: "Este trimestre",
+  year: "Este año",
+  custom: "Personalizado",
+};
+
+const chartGranularityLabels: Record<ChartGranularity, string> = {
+  auto: "Automática",
+  day: "Diaria",
+  week: "Semanal",
+  month: "Mensual",
+  quarter: "Trimestral",
+};
+
+const routes: Partial<Record<EmployeeHomeSection, string>> = {
+  dashboard: "/employee",
+  projects: "/employee/projects",
+  quotations: "/employee/quotations",
+  invoices: "/employee/billing",
+  payments: "/employee/billing",
+  companies: "/employee/companies", // TODO: FUTURE EMPLOYEE ROUTE
+  support: "/employee/support", // TODO: FUTURE EMPLOYEE ROUTE
+  ai: "/employee/ai", // TODO: FUTURE EMPLOYEE ROUTE
+  notifications: "/employee/notifications", // TODO: FUTURE EMPLOYEE ROUTE
+  activity: "/employee/activity", // TODO: FUTURE EMPLOYEE ROUTE
+  audits: "/employee/audits", // TODO: FUTURE EMPLOYEE ROUTE
+  companyChanges: "/employee/company-changes", // TODO: FUTURE EMPLOYEE ROUTE
+  maintenance: "/employee/maintenance", // TODO: FUTURE EMPLOYEE ROUTE
+  automations: "/employee/automations", // TODO: FUTURE EMPLOYEE ROUTE
+  automationRuns: "/employee/automation-runs", // TODO: FUTURE EMPLOYEE ROUTE
+  calendar: "/employee/calendar", // TODO: FUTURE EMPLOYEE ROUTE · página completa futura
+};
+
+const newRoutes: Record<EmployeeHomeNewAction, string> = {
+  quotation: "/employee/quotations/new",
+  project: "/employee/projects/new",
+  invoice: "/employee/billing/new",
+};
+
+function normalizeStatus(value: string | null | undefined): string {
+  return String(value ?? "").trim().toLowerCase();
+}
+
+function toDate(value: string | Date | null | undefined): Date | null {
+  if (!value) return null;
+  const date = value instanceof Date ? value : new Date(value);
+  return Number.isNaN(date.getTime()) ? null : date;
+}
+
+function daysUntilLabel(date: Date): string {
+  const days = Math.max(
+    0,
+    Math.ceil(
+      (startOfDay(date).getTime() - startOfDay(new Date()).getTime()) /
+        86400000
+    )
+  );
+
+  if (days === 0) return "hoy";
+  if (days === 1) return "mañana";
+  return `en ${days} días`;
+}
+
+function inRange(
+  value: string | Date | null | undefined,
+  start: Date,
+  end: Date
+): boolean {
+  const date = toDate(value);
+  return Boolean(date && date >= start && date <= end);
+}
+
+function safeText(value: string | null | undefined, fallback: string): string {
+  const text = value?.trim();
+  return text || fallback;
+}
+
+function isCancelledInvoice(invoice: InvoiceRow): boolean {
+  return normalizeStatus(invoice.estado) === "cancelada";
+}
+
+function isPaidInvoice(invoice: InvoiceRow): boolean {
+  return normalizeStatus(invoice.estado) === "pagada";
+}
+
+function isOpenTicket(ticket: TicketRow): boolean {
+  return ["abierto", "en_progreso"].includes(normalizeStatus(ticket.estado));
+}
+
+function isHighPriority(ticket: TicketRow): boolean {
+  return ["alta", "urgente"].includes(normalizeStatus(ticket.prioridad));
+}
+
+function isCompletedMilestone(milestone: MilestoneRow): boolean {
+  return Boolean(
+    milestone.completed_at ||
+      normalizeStatus(milestone.estado) === "completado"
+  );
+}
+
+function isActiveProject(project: ProjectRow): boolean {
+  return ["activo", "pendiente"].includes(normalizeStatus(project.estado));
+}
+
+function paymentIsSuccessful(payment: PaymentRow): boolean {
+  return normalizeStatus(payment.status) === "succeeded";
+}
+
+function paymentAmountInEuros(payment: PaymentRow): number {
+  const currency = String(payment.currency ?? "EUR").toUpperCase();
+  if (currency !== "EUR") return 0;
+
+  return Number(payment.amount ?? 0) / 100;
+}
+
+function invoiceOutstanding(invoice: InvoiceRow): number {
+  if (
+    isPaidInvoice(invoice) ||
+    isCancelledInvoice(invoice)
+  ) {
+    return 0;
+  }
+
+  const amount = Number(
+    invoice.importe_a_pagar ?? invoice.monto ?? 0
+  );
+
+  return Math.max(0, amount);
+}
+
+function invoiceNetAmount(invoice: InvoiceRow): number {
+  // "Neto" se interpreta como base imponible: subtotal, antes de IVA.
+  // Si una fila legacy no tuviera subtotal, se usa monto - iva_importe.
+  const subtotal = Number(invoice.subtotal);
+  if (Number.isFinite(subtotal)) return Math.max(0, subtotal);
+
+  return Math.max(
+    0,
+    Number(invoice.monto ?? 0) - Number(invoice.iva_importe ?? 0)
+  );
+}
+
+function monthlyContractValue(contract: ContractRow): number {
+  const price = Number(contract.precio ?? 0);
+  switch (normalizeStatus(contract.periodicidad)) {
+    case "trimestral":
+      return price / 3;
+    case "semestral":
+      return price / 6;
+    case "anual":
+      return price / 12;
+    default:
+      return price;
+  }
+}
+
+function getPeriodRange(
+  period: DashboardPeriod,
+  now: Date,
+  customStart: Date | null,
+  customEnd: Date | null
+): PeriodRange {
+  switch (period) {
+    case "today":
+      return {
+        start: startOfDay(now),
+        end: endOfDay(now),
+        label: periodLabels[period],
+      };
+    case "7d":
+      return {
+        start: startOfDay(addDays(now, -6)),
+        end: endOfDay(now),
+        label: periodLabels[period],
+      };
+    case "30d":
+      return {
+        start: startOfDay(addDays(now, -29)),
+        end: endOfDay(now),
+        label: periodLabels[period],
+      };
+    case "month":
+      return {
+        start: startOfMonth(now),
+        end: endOfMonth(now),
+        label: periodLabels[period],
+      };
+    case "previousMonth": {
+      const previousMonth = addMonths(now, -1);
+      return {
+        start: startOfMonth(previousMonth),
+        end: endOfMonth(previousMonth),
+        label: periodLabels[period],
+      };
+    }
+    case "quarter":
+      return {
+        start: startOfQuarter(now),
+        end: endOfQuarter(now),
+        label: periodLabels[period],
+      };
+    case "year":
+      return {
+        start: startOfYear(now),
+        end: endOfYear(now),
+        label: periodLabels[period],
+      };
+    case "custom":
+      return {
+        start: customStart ?? startOfMonth(now),
+        end: customEnd ?? endOfDay(now),
+        label: periodLabels[period],
+      };
+  }
+}
+
+function getAutoGranularity(start: Date, end: Date): Exclude<ChartGranularity, "auto"> {
+  const days = Math.max(
+    1,
+    Math.ceil((end.getTime() - start.getTime()) / 86_400_000)
+  );
+
+  if (days <= 31) return "day";
+  if (days <= 120) return "week";
+  if (days <= 730) return "month";
+  return "quarter";
+}
+
+function startOfBucket(date: Date, granularity: Exclude<ChartGranularity, "auto">): Date {
+  switch (granularity) {
+    case "day":
+      return startOfDay(date);
+    case "week": {
+      const day = date.getDay();
+      const daysFromMonday = day === 0 ? 6 : day - 1;
+      return startOfDay(addDays(date, -daysFromMonday));
+    }
+    case "month":
+      return startOfMonth(date);
+    case "quarter":
+      return startOfQuarter(date);
+  }
+}
+
+function nextBucket(
+  date: Date,
+  granularity: Exclude<ChartGranularity, "auto">
+): Date {
+  switch (granularity) {
+    case "day":
+      return addDays(date, 1);
+    case "week":
+      return addWeeks(date, 1);
+    case "month":
+      return addMonths(date, 1);
+    case "quarter":
+      return addQuarters(date, 1);
+  }
+}
+
+function formatBucketLabel(
+  date: Date,
+  granularity: Exclude<ChartGranularity, "auto">
+): string {
+  switch (granularity) {
+    case "day":
+      return format(date, "d MMM", { locale: es });
+    case "week":
+      return `Sem. ${format(date, "d MMM", { locale: es })}`;
+    case "month":
+      return format(date, "MMM yy", { locale: es });
+    case "quarter":
+      return `T${Math.floor(date.getMonth() / 3) + 1} ${format(date, "yy")}`;
+  }
+}
+
+function SectionTitle({
+  eyebrow,
+  title,
+  description,
+  action,
+  onAction,
+}: {
+  eyebrow?: string;
+  title: string;
+  description?: string;
+  action?: string;
+  onAction?: () => void;
+}) {
+  return (
+    <div className="flex items-end justify-between gap-4">
+      <div>
+        {eyebrow ? (
+          <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-[#8A93A3]">
+            {eyebrow}
+          </p>
+        ) : null}
+        <h2 className="mt-1 text-[18px] font-semibold tracking-[-0.015em] text-[#172033]">
+          {title}
+        </h2>
+        {description ? (
+          <p className="mt-1 text-sm text-[#7C8798]">{description}</p>
+        ) : null}
+      </div>
+
+      {action && onAction ? (
+        <button
+          type="button"
+          onClick={onAction}
+          className="inline-flex shrink-0 items-center gap-1.5 text-sm font-medium text-[#344154] transition-colors hover:text-[#172033]"
+        >
+          {action}
+          <ArrowRight className="h-4 w-4" strokeWidth={1.8} />
+        </button>
+      ) : null}
+    </div>
+  );
+}
+
+function PrimaryMetric({
+  icon: Icon,
+  label,
+  value,
+  detail,
+  onClick,
+}: {
+  icon: typeof CircleDollarSign;
+  label: string;
+  value: string;
+  detail: string;
+  onClick?: () => void;
+}) {
+  const content = (
+    <>
+      <div className="flex items-center gap-2.5">
+        <Icon className="h-4 w-4 text-[#667285]" strokeWidth={1.7} />
+        <span className="text-[11px] font-semibold uppercase tracking-[0.13em] text-[#7F8998]">
+          {label}
+        </span>
+      </div>
+      <p className="mt-4 text-[25px] font-semibold tracking-[-0.035em] text-[#172033] sm:text-[28px]">
+        {value}
+      </p>
+      <p className="mt-1 text-xs text-[#8993A2]">{detail}</p>
+    </>
+  );
+
+  if (!onClick) {
+    return <div className="min-w-0 px-5 py-5 sm:px-6">{content}</div>;
+  }
 
   return (
-    <section className="relative mt-16 overflow-hidden rounded-3xl border border-[#E8ECF2] bg-gradient-to-br from-[#F8FAFF] via-white to-[#F4F7FC] px-5 py-14 md:px-8 md:py-16">
-
-      {/* Background decorative elements */}
-      <div className="pointer-events-none absolute -left-32 top-20 h-72 w-72 rounded-full bg-[#173B8F]/5 blur-3xl" />
-      <div className="pointer-events-none absolute -right-32 bottom-10 h-72 w-72 rounded-full bg-[#2854B8]/5 blur-3xl" />
-
-      {/* Header */}
-      <div className="relative z-10 mx-auto mb-14 max-w-3xl text-center">
-        <h3 className="scroll-reveal-item text-3xl font-bold tracking-tight text-[#102A66] md:text-4xl">
-          Sistemas conectados. Procesos automatizados.
-          <br className="hidden md:block" />
-          <span className="text-[#173B8F]"> Un negocio que trabaja mejor.</span>
-        </h3>
-
-        <p className="scroll-reveal-item mt-4 text-base text-[#52627A] md:text-lg">
-          Todas tus herramientas trabajando juntas de forma inteligente
-        </p>
-      </div>
-
-      {/* Main integration diagram */}
-<div className="relative z-10 mx-auto max-w-6xl">
-
-  {/* DESKTOP */}
-  <div className="relative hidden h-[430px] md:block">
-
-    {/* ========================= */}
-    {/* CONEXIONES */}
-    {/* ========================= */}
-
-    <svg
-      className="pointer-events-none absolute left-0 top-0 z-0 h-full w-full"
-      viewBox="0 0 1200 430"
-      preserveAspectRatio="none"
-      fill="none"
+    <button
+      type="button"
+      onClick={onClick}
+      className="min-w-0 px-5 py-5 text-left transition-colors hover:bg-[#FAFBFC] sm:px-6"
     >
+      {content}
+    </button>
+  );
+}
 
-      {/* Make → Modira */}
-      <path
-        d="M300 70 C400 70 445 120 505 155"
-        stroke="#2563EB"
-        strokeWidth="2"
-        strokeDasharray="7 7"
-        strokeLinecap="round"
+function SecondaryMetric({
+  icon: Icon,
+  label,
+  value,
+  detail,
+}: {
+  icon: typeof Users;
+  label: string;
+  value: string;
+  detail: string;
+}) {
+  return (
+    <div className="min-w-0 py-4 sm:px-5">
+      <div className="flex items-center gap-2">
+        <Icon className="h-4 w-4 text-[#778293]" strokeWidth={1.65} />
+        <span className="text-xs font-medium text-[#697486]">{label}</span>
+      </div>
+      <p className="mt-2 text-xl font-semibold tracking-[-0.025em] text-[#263044]">
+        {value}
+      </p>
+      <p className="mt-0.5 truncate text-xs text-[#929AAA]">{detail}</p>
+    </div>
+  );
+}
+
+function SkeletonBlock({ className = "" }: { className?: string }) {
+  return (
+    <div
+      className={`animate-pulse rounded-md bg-[#EEF1F5] ${className}`}
+      aria-hidden="true"
+    />
+  );
+}
+
+function AttentionRow({
+  icon: Icon,
+  title,
+  detail,
+  value,
+  tone = "neutral",
+  onClick,
+}: {
+  icon: typeof AlertCircle;
+  title: string;
+  detail: string;
+  value: string;
+  tone?: "neutral" | "warning" | "danger";
+  onClick?: () => void;
+}) {
+  const toneClass =
+    tone === "danger"
+      ? "text-[#B54747]"
+      : tone === "warning"
+        ? "text-[#9A6B18]"
+        : "text-[#526073]";
+
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className="group flex w-full items-center gap-3 border-b border-[#EEF1F4] py-3.5 text-left last:border-b-0"
+    >
+      <span className={`mt-0.5 shrink-0 ${toneClass}`}>
+        <Icon className="h-4 w-4" strokeWidth={1.75} />
+      </span>
+      <span className="min-w-0 flex-1">
+        <span className="block text-sm font-medium text-[#303B4E] group-hover:text-[#172033]">
+          {title}
+        </span>
+        <span className="mt-0.5 block truncate text-xs text-[#8A94A4]">
+          {detail}
+        </span>
+      </span>
+      <span className="shrink-0 text-right text-sm font-semibold text-[#263044]">
+        {value}
+      </span>
+      <ArrowRight
+        className="h-3.5 w-3.5 shrink-0 text-[#A0A8B5] opacity-0 transition-opacity group-hover:opacity-100"
+        strokeWidth={1.7}
       />
+    </button>
+  );
+}
 
-      {/* n8n → Modira */}
-      <path
-        d="M300 215 C390 215 440 215 505 215"
-        stroke="#2563EB"
-        strokeWidth="2"
-        strokeDasharray="7 7"
-        strokeLinecap="round"
-      />
+function RevenueChart({
+  buckets,
+  granularity,
+}: {
+  buckets: Array<{
+    label: string;
+    collected: number;
+  }>;
+  granularity: Exclude<ChartGranularity, "auto">;
+}) {
+  const [hovered, setHovered] = useState<number | null>(null);
 
-      {/* APIs → Modira */}
-      <path
-        d="M300 360 C400 360 445 310 505 275"
-        stroke="#2563EB"
-        strokeWidth="2"
-        strokeDasharray="7 7"
-        strokeLinecap="round"
-      />
+  const width = 760;
+  const height = 280;
+  const left = 48;
+  const right = 18;
+  const top = 18;
+  const bottom = 40;
+  const chartWidth = width - left - right;
+  const chartHeight = height - top - bottom;
+  const max = Math.max(1, ...buckets.map((bucket) => bucket.collected));
 
-      {/* Modira → Google */}
-      <path
-        d="M695 155 C755 120 800 70 900 70"
-        stroke="#2563EB"
-        strokeWidth="2"
-        strokeDasharray="7 7"
-        strokeLinecap="round"
-      />
+  const points = buckets.map((bucket, index) => {
+    const x =
+      buckets.length === 1
+        ? left + chartWidth / 2
+        : left + (index / (buckets.length - 1)) * chartWidth;
+    const y = top + chartHeight - (bucket.collected / max) * chartHeight;
+    return { ...bucket, x, y };
+  });
 
-      {/* Modira → Airtable */}
-      <path
-        d="M695 215 C760 215 810 215 900 215"
-        stroke="#2563EB"
-        strokeWidth="2"
-        strokeDasharray="7 7"
-        strokeLinecap="round"
-      />
+  const linePath = points
+    .map((point, index) => `${index === 0 ? "M" : "L"} ${point.x} ${point.y}`)
+    .join(" ");
 
-      {/* Modira → WhatsApp */}
-      <path
-        d="M695 275 C755 310 800 360 900 360"
-        stroke="#2563EB"
-        strokeWidth="2"
-        strokeDasharray="7 7"
-        strokeLinecap="round"
-      />
-    </svg>
+  const areaPath =
+    points.length > 0
+      ? `${linePath} L ${points[points.length - 1].x} ${top + chartHeight} L ${points[0].x} ${top + chartHeight} Z`
+      : "";
 
+  const visibleLabels = points.filter((_, index) => {
+    if (points.length <= 8) return true;
+    const step = Math.ceil(points.length / 8);
+    return index === 0 || index === points.length - 1 || index % step === 0;
+  });
 
-    {/* ========================= */}
-    {/* COLUMNA IZQUIERDA */}
-    {/* ========================= */}
+  const yTicks = [0, 0.25, 0.5, 0.75, 1];
 
-    <div className="absolute left-0 top-[15px] w-[300px]">
-      <div className="scroll-reveal-item flex h-[110px] items-center rounded-2xl border border-[#E8ECF2] bg-white px-6 shadow-sm">
-        <div className="mr-4 flex h-14 w-14 items-center justify-center rounded-xl bg-purple-50">
-          <Workflow className="h-7 w-7 text-purple-600" />
-        </div>
-
-        <div>
-          <h4 className="text-lg font-bold text-[#102A66]">
-            Make
-          </h4>
-          <p className="text-sm text-[#52627A]">
-            Automatización visual
-          </p>
-        </div>
-      </div>
-    </div>
-
-
-    <div className="absolute left-0 top-[160px] w-[300px]">
-      <div className="scroll-reveal-item flex h-[110px] items-center rounded-2xl border border-[#E8ECF2] bg-white px-6 shadow-sm">
-        <div className="mr-4 flex h-14 w-14 items-center justify-center rounded-xl bg-rose-50">
-          <Network className="h-7 w-7 text-rose-500" />
-        </div>
-
-        <div>
-          <h4 className="text-lg font-bold text-[#102A66]">
-            n8n
-          </h4>
-          <p className="text-sm text-[#52627A]">
-            Workflows avanzados
-          </p>
-        </div>
-      </div>
-    </div>
-
-
-    <div className="absolute left-0 top-[305px] w-[300px]">
-      <div className="scroll-reveal-item flex h-[110px] items-center rounded-2xl border border-[#E8ECF2] bg-white px-6 shadow-sm">
-        <div className="mr-4 flex h-14 w-14 items-center justify-center rounded-xl bg-blue-50">
-          <Webhook className="h-7 w-7 text-blue-600" />
-        </div>
-
-        <div>
-          <h4 className="text-lg font-bold text-[#102A66]">
-            APIs & Webhooks
-          </h4>
-          <p className="text-sm text-[#52627A]">
-            Conecta servicios externos
-          </p>
-        </div>
-      </div>
-    </div>
-
-
-    {/* ========================= */}
-    {/* COLUMNA DERECHA */}
-    {/* ========================= */}
-
-    <div className="absolute right-0 top-[15px] w-[300px]">
-      <div className="scroll-reveal-item flex h-[110px] items-center rounded-2xl border border-[#E8ECF2] bg-white px-6 shadow-sm">
-        <div className="mr-4 flex h-14 w-14 items-center justify-center rounded-xl bg-blue-50">
-          <Cloud className="h-7 w-7 text-blue-500" />
-        </div>
-
-        <div>
-          <h4 className="text-lg font-bold text-[#102A66]">
-            Google Workspace
-          </h4>
-          <p className="text-sm text-[#52627A]">
-            Docs, Sheets, Gmail y más
-          </p>
-        </div>
-      </div>
-    </div>
-
-
-    <div className="absolute right-0 top-[160px] w-[300px]">
-      <div className="scroll-reveal-item flex h-[110px] items-center rounded-2xl border border-[#E8ECF2] bg-white px-6 shadow-sm">
-        <div className="mr-4 flex h-14 w-14 items-center justify-center rounded-xl bg-orange-50">
-          <Database className="h-7 w-7 text-orange-500" />
-        </div>
-
-        <div>
-          <h4 className="text-lg font-bold text-[#102A66]">
-            Airtable
-          </h4>
-          <p className="text-sm text-[#52627A]">
-            Bases de datos flexibles
-          </p>
-        </div>
-      </div>
-    </div>
-
-
-    <div className="absolute right-0 top-[305px] w-[300px]">
-      <div className="scroll-reveal-item flex h-[110px] items-center rounded-2xl border border-[#E8ECF2] bg-white px-6 shadow-sm">
-        <div className="mr-4 flex h-14 w-14 items-center justify-center rounded-xl bg-green-50">
-          <MessageCircle className="h-7 w-7 text-green-500" />
-        </div>
-
-        <div>
-          <h4 className="text-lg font-bold text-[#102A66]">
-            WhatsApp Business
-          </h4>
-          <p className="text-sm text-[#52627A]">
-            Mensajería y atención
-          </p>
-        </div>
-      </div>
-    </div>
-
-
-    {/* ========================= */}
-    {/* CENTRAL AUTOMATION HUB */}
-    {/* ========================= */}
-
-    <div className="absolute left-1/2 top-0 -translate-x-1/2">
-      <div className="scroll-reveal-item rounded-2xl border border-[#D9E2F5] bg-white px-8 py-4 text-center shadow-md">
-        <h4 className="text-lg font-bold text-[#173B8F]">
-          Central Automation Hub
-        </h4>
-
-        <p className="mt-1 text-sm text-[#52627A]">
-          Conecta • Automatiza • Integra
-        </p>
-      </div>
-    </div>
-
-
-    {/* ========================= */}
-    {/* MODIRA */}
-    {/* ========================= */}
-
-    <div className="absolute left-1/2 top-[120px] -translate-x-1/2">
-
-      <div className="scroll-reveal-item relative flex h-[150px] w-[150px] items-center justify-center rounded-full border-[10px] border-white bg-[#173B8F] shadow-xl">
-
-        <div className="absolute inset-[10px] rounded-full border border-white/20" />
-
-        <div className="relative text-center text-white">
-          <Zap className="mx-auto mb-1 h-12 w-12 fill-white" />
-
-          <p className="text-base font-bold tracking-[0.25em]">
-            MODIRA
-          </p>
-        </div>
-
-      </div>
-
-    </div>
-
-
-    {/* ========================= */}
-    {/* DATA FLOW */}
-    {/* ========================= */}
-
-    <div className="absolute left-1/2 top-[295px] -translate-x-1/2">
-      <div className="scroll-reveal-item flex w-[300px] items-center justify-between rounded-2xl border border-[#E8ECF2] bg-white px-6 py-4 shadow-sm">
-
-        <ArrowRight className="h-5 w-5 rotate-180 text-[#173B8F]" />
-
-        <div className="text-center">
-          <p className="font-bold text-[#173B8F]">
-            Data Flow
-          </p>
-
-          <p className="text-xs text-[#52627A]">
-            Seguro • Fiable • Tiempo real
-          </p>
-        </div>
-
-        <ArrowRight className="h-5 w-5 text-[#173B8F]" />
-
-      </div>
-    </div>
-
-  </div>
-
-
-  {/* ========================= */}
-  {/* MOBILE */}
-  {/* ========================= */}
-
-  <div className="space-y-4 md:hidden">
-
-    <div className="scroll-reveal-item rounded-2xl border border-[#E8ECF2] bg-white p-5 shadow-sm">
-      <p className="font-bold text-[#102A66]">Make</p>
-      <p className="text-sm text-[#52627A]">
-        Automatización visual
-      </p>
-    </div>
-
-    <div className="scroll-reveal-item rounded-2xl border border-[#E8ECF2] bg-white p-5 shadow-sm">
-      <p className="font-bold text-[#102A66]">n8n</p>
-      <p className="text-sm text-[#52627A]">
-        Workflows avanzados
-      </p>
-    </div>
-
-    <div className="scroll-reveal-item rounded-2xl border border-[#E8ECF2] bg-white p-5 shadow-sm">
-      <p className="font-bold text-[#102A66]">
-        APIs & Webhooks
-      </p>
-      <p className="text-sm text-[#52627A]">
-        Conecta servicios externos
-      </p>
-    </div>
-
-    <div className="scroll-reveal-item rounded-2xl border border-[#E8ECF2] bg-[#173B8F] p-8 text-center text-white">
-      <Zap className="mx-auto mb-2 h-12 w-12" />
-
-      <p className="font-bold tracking-[0.25em]">
-        MODIRA
-      </p>
-    </div>
-
-    <div className="scroll-reveal-item rounded-2xl border border-[#E8ECF2] bg-white p-5 shadow-sm">
-      <p className="font-bold text-[#102A66]">
-        Google Workspace
-      </p>
-      <p className="text-sm text-[#52627A]">
-        Docs, Sheets, Gmail y más
-      </p>
-    </div>
-
-    <div className="scroll-reveal-item rounded-2xl border border-[#E8ECF2] bg-white p-5 shadow-sm">
-      <p className="font-bold text-[#102A66]">
-        Airtable
-      </p>
-      <p className="text-sm text-[#52627A]">
-        Bases de datos flexibles
-      </p>
-    </div>
-
-    <div className="scroll-reveal-item rounded-2xl border border-[#E8ECF2] bg-white p-5 shadow-sm">
-      <p className="font-bold text-[#102A66]">
-        WhatsApp Business
-      </p>
-      <p className="text-sm text-[#52627A]">
-        Mensajería y atención
-      </p>
-    </div>
-
-  </div>
-
-</div>
-        {/* Benefits */}
-        <div className="relative z-10 mt-14 grid gap-4 border-t border-dashed border-[#BFCBE0] pt-8 sm:grid-cols-2 lg:grid-cols-5">
-          {benefits.map((benefit) => {
-            const Icon = benefit.icon;
-
-            return (
-              <div
-                key={benefit.title}
-                className="group rounded-xl border border-[#E8ECF2] bg-white/80 p-5 text-center transition-all duration-300 hover:-translate-y-1 hover:bg-white hover:shadow-md"
+  return (
+    <div className="relative mt-5 w-full overflow-hidden">
+      <svg
+        viewBox={`0 0 ${width} ${height}`}
+        className="h-auto w-full"
+        role="img"
+        aria-label="Ingresos cobrados por periodo"
+      >
+        {yTicks.map((ratio) => {
+          const y = top + chartHeight - ratio * chartHeight;
+          const value = max * ratio;
+          return (
+            <g key={ratio}>
+              <line
+                x1={left}
+                x2={width - right}
+                y1={y}
+                y2={y}
+                stroke="#EEF1F4"
+                strokeWidth="1"
+              />
+              <text
+                x={left - 9}
+                y={y + 4}
+                textAnchor="end"
+                className="fill-[#9AA3AF] text-[9px]"
               >
-                <Icon className="mx-auto mb-3 h-8 w-8 text-[#173B8F] transition-transform duration-300 group-hover:scale-110" />
+                {value >= 1000
+                  ? `${Math.round(value / 1000)}k`
+                  : Math.round(value)}
+              </text>
+            </g>
+          );
+        })}
 
-                <h4 className="scroll-reveal-item text-sm font-bold text-[#102A66]">
-                  {benefit.title}
-                </h4>
+        {areaPath ? (
+          <path d={areaPath} fill="currentColor" className="text-[#F2F5F8]" />
+        ) : null}
 
-                <p className="scroll-reveal-item mt-1 text-xs text-[#52627A]">
-                  {benefit.description}
+        {linePath ? (
+          <path
+            d={linePath}
+            fill="none"
+            stroke="#344154"
+            strokeWidth="2"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          />
+        ) : null}
+
+        {points.map((point, index) => (
+          <g
+            key={`${point.label}-${index}`}
+            onMouseEnter={() => setHovered(index)}
+            onMouseLeave={() => setHovered(null)}
+          >
+            <circle
+              cx={point.x}
+              cy={point.y}
+              r={hovered === index ? 5 : 3}
+              className="fill-white stroke-[#344154]"
+              strokeWidth="2"
+            />
+          </g>
+        ))}
+
+        {visibleLabels.map((point) => (
+          <text
+            key={`label-${point.label}-${point.x}`}
+            x={point.x}
+            y={height - 13}
+            textAnchor="middle"
+            className="fill-[#969EAA] text-[9px]"
+          >
+            {point.label}
+          </text>
+        ))}
+      </svg>
+
+      {hovered !== null && points[hovered] ? (
+        <div
+          className="pointer-events-none absolute top-2 rounded-lg border border-[#E4E8EE] bg-white px-3 py-2 text-xs"
+          style={{
+            left: `${Math.min(
+              82,
+              Math.max(
+                9,
+                (points[hovered].x / width) * 100
+              )
+            )}%`,
+            transform: "translateX(-50%)",
+          }}
+        >
+          <p className="font-medium text-[#596476]">
+            {points[hovered].label}
+          </p>
+          <p className="mt-0.5 font-semibold text-[#172033]">
+            {euro.format(points[hovered].collected)}
+          </p>
+        </div>
+      ) : null}
+
+      <p className="mt-1 text-xs text-[#98A1AE]">
+        {chartGranularityLabels[granularity]} · ingresos efectivamente cobrados
+      </p>
+    </div>
+  );
+}
+
+export default function EmployeeHome() {
+  const { user } = useAuth();
+  const [, setLocation] = useLocation();
+
+  const [period, setPeriod] = useState<DashboardPeriod>("30d");
+  const [periodMenuOpen, setPeriodMenuOpen] = useState(false);
+  const [chartGranularity, setChartGranularity] =
+    useState<ChartGranularity>("auto");
+  const [chartMenuOpen, setChartMenuOpen] = useState(false);
+  const [newMenuOpen, setNewMenuOpen] = useState(false);
+  const [menuOpen, setMenuOpen] = useState(false);
+  const [calendarOpen, setCalendarOpen] = useState(false);
+  const [calendarMonth, setCalendarMonth] = useState<Date>(() =>
+    startOfMonth(new Date())
+  );
+  const [calendarSelectedDay, setCalendarSelectedDay] = useState<Date>(() =>
+    startOfDay(new Date())
+  );
+
+  const [customStart, setCustomStart] = useState<Date | null>(null);
+  const [customEnd, setCustomEnd] = useState<Date | null>(null);
+
+  const [data, setData] = useState<DashboardData>({
+    workerName: "",
+    companies: [],
+    projects: [],
+    quotations: [],
+    invoices: [],
+    payments: [],
+    tickets: [],
+    milestones: [],
+    progress: [],
+    updates: [],
+    activity: [],
+    contracts: [],
+    changeRequests: [],
+    profiles: [],
+    auditRequests: [],
+    automationRuns: [],
+  });
+
+  const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+  const [errors, setErrors] = useState<string[]>([]);
+
+  const periodRef = useRef<HTMLDivElement | null>(null);
+  const chartRef = useRef<HTMLDivElement | null>(null);
+  const newRef = useRef<HTMLDivElement | null>(null);
+
+  const navigate = useCallback(
+    (section: EmployeeHomeSection) => {
+      const route = routes[section];
+      if (route) setLocation(route);
+    },
+    [setLocation]
+  );
+
+  const triggerNew = useCallback(
+    (action: EmployeeHomeNewAction) => {
+      setNewMenuOpen(false);
+      setLocation(newRoutes[action]);
+    },
+    [setLocation]
+  );
+
+  useEffect(() => {
+    const handlePointerDown = (event: MouseEvent) => {
+      const target = event.target as Node;
+
+      if (periodRef.current && !periodRef.current.contains(target)) {
+        setPeriodMenuOpen(false);
+      }
+      if (chartRef.current && !chartRef.current.contains(target)) {
+        setChartMenuOpen(false);
+      }
+      if (newRef.current && !newRef.current.contains(target)) {
+        setNewMenuOpen(false);
+      }
+    };
+
+    const handleEscape = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        setPeriodMenuOpen(false);
+        setChartMenuOpen(false);
+        setNewMenuOpen(false);
+        setMenuOpen(false);
+        setCalendarOpen(false);
+      }
+    };
+
+    document.addEventListener("mousedown", handlePointerDown);
+    document.addEventListener("keydown", handleEscape);
+
+    return () => {
+      document.removeEventListener("mousedown", handlePointerDown);
+      document.removeEventListener("keydown", handleEscape);
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!menuOpen) return;
+
+    const handleEscape = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setMenuOpen(false);
+    };
+
+    document.addEventListener("keydown", handleEscape);
+    return () => document.removeEventListener("keydown", handleEscape);
+  }, [menuOpen]);
+
+  useEffect(() => {
+    document.body.style.overflow = menuOpen ? "hidden" : "";
+    return () => {
+      document.body.style.overflow = "";
+    };
+  }, [menuOpen]);
+
+  const loadDashboard = useCallback(
+    async (isRefresh = false) => {
+      if (!user?.id) {
+        setLoading(false);
+        return;
+      }
+
+      if (isRefresh) setRefreshing(true);
+      else setLoading(true);
+
+      const warnings: string[] = [];
+
+      try {
+        const [
+          workerResult,
+          companiesResult,
+          projectsResult,
+          quotationsResult,
+          invoicesResult,
+          paymentsResult,
+          ticketsResult,
+          milestonesResult,
+          progressResult,
+          updatesResult,
+          activityResult,
+          contractsResult,
+          changeRequestsResult,
+          profilesResult,
+          auditRequestsResult,
+          automationRunsResult,
+        ] = await Promise.all([
+          supabase
+            .from("workers")
+            .select("id, auth_user_id, display_name")
+            .eq("auth_user_id", user.id)
+            .maybeSingle(),
+
+          supabase
+            .from("companies")
+            .select("id, company_name, created_at")
+            .order("company_name", { ascending: true }),
+
+          supabase
+            .from("projects")
+            .select(
+              "id, nombre, descripcion, estado, company_id, fecha_inicio, fecha_fin, updated_at"
+            )
+            .order("updated_at", { ascending: false }),
+
+          supabase
+            .from("quotations")
+            .select(
+              "id, company_id, project_id, numero_presupuesto, titulo, precio_base, precio_total, iva_porcentaje, estado, fecha_emision, fecha_validez, created_at"
+            )
+            .order("created_at", { ascending: false }),
+
+          supabase
+            .from("invoices")
+            .select(
+              "id, company_id, project_id, numero_factura, monto, subtotal, iva_importe, importe_a_pagar, irpf_importe, estado, fecha_emision, fecha_vencimiento, fecha_pago, created_at"
+            )
+            .order("created_at", { ascending: false }),
+
+          supabase
+            .from("payments")
+            .select(
+              "id, company_id, invoice_id, amount, currency, status, paid_at, created_at, description"
+            )
+            .order("created_at", { ascending: false }),
+
+          supabase
+            .from("support_tickets")
+            .select(
+              "id, company_id, titulo, estado, prioridad, fecha_creacion, created_at, updated_at"
+            )
+            .order("created_at", { ascending: false }),
+
+          supabase
+            .from("project_milestones")
+            .select(
+              "id, project_id, nombre, fecha_prevista, orden, estado, completed_at, created_at, updated_at"
+            )
+            .order("fecha_prevista", { ascending: true }),
+
+          supabase
+            .from("project_progress")
+            .select(
+              "project_id, total_milestones, completed_milestones, progress_percentage"
+            ),
+
+          supabase
+            .from("project_updates")
+            .select(
+              "id, project_id, titulo, contenido, created_by, created_at, updated_at"
+            )
+            .order("created_at", { ascending: false })
+            .limit(30),
+
+          supabase
+            .from("activity_log")
+            .select(
+              "id, user_id, company_id, action, resource_type, resource_id, description, metadata, created_at"
+            )
+            .order("created_at", { ascending: false })
+            .limit(30),
+
+          supabase
+            .from("maintenance_contracts")
+            .select(
+              "id, company_id, nombre_plan, precio, periodicidad, estado, fecha_inicio, fecha_fin, created_at"
+            )
+            .order("fecha_fin", { ascending: true }),
+
+          // Esta RPC ya forma parte del flujo actual de EmployeeArea y
+          // mantiene la revisión de solicitudes dentro de la frontera
+          // SECURITY DEFINER existente.
+          supabase.rpc("get_worker_project_change_requests"),
+
+          // 016/021 permiten al worker activo consultar perfiles
+          // necesarios para contexto operativo.
+          supabase
+            .from("profiles")
+            .select("id, nombre, rol, company_id, status, created_at")
+            .order("created_at", { ascending: false }),
+
+          // 004 expone audit_requests al worker mediante RLS.
+          // 028 mantiene el INSERT público detrás de submit_audit_request().
+          supabase
+            .from("audit_requests")
+            .select("id, nombre, empresa, estado, created_at")
+            .order("created_at", { ascending: false })
+            .limit(100),
+
+          // 005/016 permiten al worker consultar el historial de runs.
+          supabase
+            .from("automation_runs")
+            .select(
+              "id, automation_id, company_id, estado, inicio, finalizacion, duracion_ms, error, created_at"
+            )
+            .order("created_at", { ascending: false })
+            .limit(100),
+        ]);
+
+        const results = [
+          ["trabajador", workerResult.error],
+          ["empresas", companiesResult.error],
+          ["proyectos", projectsResult.error],
+          ["presupuestos", quotationsResult.error],
+          ["facturas", invoicesResult.error],
+          ["pagos", paymentsResult.error],
+          ["soporte", ticketsResult.error],
+          ["hitos", milestonesResult.error],
+          ["progreso", progressResult.error],
+          ["actualizaciones", updatesResult.error],
+          ["actividad", activityResult.error],
+          ["contratos", contractsResult.error],
+          ["solicitudes de cambio", changeRequestsResult.error],
+          ["perfiles", profilesResult.error],
+          ["solicitudes de auditoría", auditRequestsResult.error],
+          ["ejecuciones de automatización", automationRunsResult.error],
+        ] as const;
+
+        for (const [name, error] of results) {
+          if (error) warnings.push(name);
+        }
+
+        setData({
+          workerName:
+            workerResult.data?.display_name?.trim() || "Trabajador",
+          companies: (companiesResult.data || []) as CompanyRow[],
+          projects: (projectsResult.data || []) as ProjectRow[],
+          quotations: (quotationsResult.data || []) as QuotationRow[],
+          invoices: (invoicesResult.data || []) as InvoiceRow[],
+          payments: (paymentsResult.data || []) as PaymentRow[],
+          tickets: (ticketsResult.data || []) as TicketRow[],
+          milestones: (milestonesResult.data || []) as MilestoneRow[],
+          progress: (progressResult.data || []) as ProgressRow[],
+          updates: (updatesResult.data || []) as UpdateRow[],
+          activity: (activityResult.data || []) as ActivityRow[],
+          contracts: (contractsResult.data || []) as ContractRow[],
+          changeRequests: (changeRequestsResult.data || []) as ChangeRequestRow[],
+          profiles: (profilesResult.data || []) as ProfileRow[],
+          auditRequests: (auditRequestsResult.data || []) as AuditRequestRow[],
+          automationRuns: (automationRunsResult.data || []) as AutomationRunRow[],
+        });
+
+        setErrors(warnings);
+      } catch (error) {
+        console.error("[EmployeeHome] Error loading dashboard:", error);
+        setErrors(["datos del dashboard"]);
+      } finally {
+        setLoading(false);
+        setRefreshing(false);
+      }
+    },
+    [user?.id]
+  );
+
+  useEffect(() => {
+    void loadDashboard();
+  }, [loadDashboard]);
+
+  const now = useMemo(() => new Date(), []);
+
+  const periodRange = useMemo(
+    () => getPeriodRange(period, now, customStart, customEnd),
+    [period, now, customStart, customEnd]
+  );
+
+  const companyById = useMemo(() => {
+    const map = new Map<string, CompanyRow>();
+    data.companies.forEach((company) => map.set(company.id, company));
+    return map;
+  }, [data.companies]);
+
+  const projectById = useMemo(() => {
+    const map = new Map<string, ProjectRow>();
+    data.projects.forEach((project) => map.set(project.id, project));
+    return map;
+  }, [data.projects]);
+
+  const profileById = useMemo(() => {
+    const map = new Map<string, ProfileRow>();
+    data.profiles.forEach((profile) => map.set(profile.id, profile));
+    return map;
+  }, [data.profiles]);
+
+  const metrics = useMemo(() => {
+    const periodInvoices = data.invoices.filter((invoice) =>
+      inRange(
+        invoice.fecha_emision || invoice.created_at,
+        periodRange.start,
+        periodRange.end
+      )
+    );
+
+    const periodPayments = data.payments.filter((payment) =>
+      inRange(
+        payment.paid_at || payment.created_at,
+        periodRange.start,
+        periodRange.end
+      )
+    );
+
+    const billedNet = periodInvoices
+      .filter((invoice) => !isCancelledInvoice(invoice))
+      .reduce((sum, invoice) => sum + invoiceNetAmount(invoice), 0);
+
+    const billedGross = periodInvoices
+  .filter((invoice) => !isCancelledInvoice(invoice))
+  .reduce((sum, invoice) => sum + Number(invoice.monto ?? 0), 0);
+
+    const collected = periodPayments
+      .filter(paymentIsSuccessful)
+      .reduce((sum, payment) => sum + paymentAmountInEuros(payment), 0);
+
+    const outstandingInvoices = periodInvoices.filter(
+      (invoice) => invoiceOutstanding(invoice) > 0
+    );
+
+    const outstanding = outstandingInvoices.reduce(
+      (sum, invoice) => sum + invoiceOutstanding(invoice),
+      0
+    );
+
+    const pendingQuotations = data.quotations.filter(
+      (quotation) =>
+        normalizeStatus(quotation.estado) === "pendiente" &&
+        inRange(
+          quotation.fecha_emision || quotation.created_at,
+          periodRange.start,
+          periodRange.end
+        )
+    );
+
+    const pipeline = pendingQuotations.reduce(
+      (sum, quotation) =>
+        sum +
+        Number(
+          quotation.precio_total ??
+            quotation.precio_base ??
+            0
+        ),
+      0
+    );
+
+    const clientProfiles = data.profiles.filter(
+      (profile) =>
+        normalizeStatus(profile.rol) === "user"
+    );
+
+    const activeUsers = clientProfiles.filter(
+      (profile) => normalizeStatus(profile.status) !== "blocked"
+    ).length;
+
+    const newUsers = clientProfiles.filter((profile) =>
+      inRange(profile.created_at, periodRange.start, periodRange.end)
+    ).length;
+
+    const periodProjects = data.projects.filter((project) =>
+      inRange(project.updated_at, periodRange.start, periodRange.end)
+    );
+
+    // "Proyectos activos" es un snapshot del estado actual. No se fuerza
+    // artificialmente al rango temporal: el periodo se refleja mediante
+    // "updatedProjectsInPeriod" si posteriormente se quiere mostrar contexto.
+    const activeProjects = data.projects.filter(
+      (project) => normalizeStatus(project.estado) === "activo"
+    ).length;
+
+    const pendingProjects = data.projects.filter(
+      (project) => normalizeStatus(project.estado) === "pendiente"
+    ).length;
+
+    const pausedProjects = data.projects.filter(
+      (project) => normalizeStatus(project.estado) === "pausado"
+    ).length;
+
+    const completedProjects = data.projects.filter((project) =>
+      ["entregado", "completado"].includes(
+        normalizeStatus(project.estado)
+      )
+    ).length;
+
+    const openTickets = data.tickets.filter(isOpenTicket);
+    const highPriorityTickets = openTickets.filter(isHighPriority);
+
+    const activeContracts = data.contracts.filter(
+      (contract) => normalizeStatus(contract.estado) === "activo"
+    );
+
+    const pendingChanges = data.changeRequests.filter(
+      (request) => normalizeStatus(request.status) === "pending"
+    ).length;
+
+    const newAudits = data.auditRequests.filter(
+      (request) =>
+        normalizeStatus(request.estado) === "nuevo" &&
+        inRange(request.created_at, periodRange.start, periodRange.end)
+    ).length;
+
+    const automationErrors = data.automationRuns.filter(
+      (run) =>
+        normalizeStatus(run.estado) === "error" &&
+        inRange(run.created_at, periodRange.start, periodRange.end)
+    ).length;
+
+    const overdueInvoices = data.invoices.filter((invoice) => {
+      const due = toDate(invoice.fecha_vencimiento);
+      return Boolean(
+        due &&
+          isBefore(due, now) &&
+          !isPaidInvoice(invoice) &&
+          !isCancelledInvoice(invoice)
+      );
+    });
+
+    const overdueAmount = overdueInvoices.reduce(
+      (sum, invoice) => sum + invoiceOutstanding(invoice),
+      0
+    );
+
+    const overdueMilestones = data.milestones.filter((milestone) => {
+      const due = toDate(milestone.fecha_prevista);
+      return Boolean(
+        due &&
+          isBefore(due, now) &&
+          !isCompletedMilestone(milestone)
+      );
+    });
+
+    const affectedMilestoneProjects = new Set(
+      overdueMilestones
+        .map((milestone) => milestone.project_id)
+        .filter(Boolean)
+    ).size;
+
+    const activeContractsValue = activeContracts.reduce(
+      (sum, contract) => sum + monthlyContractValue(contract),
+      0
+    );
+
+    return {
+      billedNet,
+      billedGross,
+      collected,
+      outstanding,
+      outstandingInvoiceCount: outstandingInvoices.length,
+      pipeline,
+      pipelineCount: pendingQuotations.length,
+      activeUsers,
+      newUsers,
+      activeProjects,
+      pendingProjects,
+      pausedProjects,
+      completedProjects,
+      updatedProjectsInPeriod: periodProjects.length,
+      openTickets: openTickets.length,
+      highPriorityTickets: highPriorityTickets.length,
+      activeContracts: activeContracts.length,
+      activeContractsValue,
+      pendingChanges,
+      newAudits,
+      automationErrors,
+      overdueInvoices,
+      overdueAmount,
+      overdueMilestones,
+      affectedMilestoneProjects,
+    };
+  }, [
+    data.auditRequests,
+    data.changeRequests,
+    data.contracts,
+    data.invoices,
+    data.payments,
+    data.profiles,
+    data.projects,
+    data.quotations,
+    data.tickets,
+    data.milestones,
+    data.automationRuns,
+    now,
+    periodRange,
+  ]);
+
+  const chartData = useMemo(() => {
+    const requestedGranularity =
+      chartGranularity === "auto"
+        ? getAutoGranularity(periodRange.start, periodRange.end)
+        : chartGranularity;
+
+    const firstBucket = startOfBucket(
+      periodRange.start,
+      requestedGranularity
+    );
+
+    const buckets: Array<{
+      label: string;
+      collected: number;
+      date: Date;
+    }> = [];
+
+    let cursor = firstBucket;
+    let guard = 0;
+
+    while (
+      cursor <= periodRange.end &&
+      guard < 100
+    ) {
+      const bucketStart = cursor;
+      const bucketEnd = nextBucket(
+        cursor,
+        requestedGranularity
+      );
+
+      const collected = data.payments
+        .filter(
+          (payment) =>
+            paymentIsSuccessful(payment) &&
+            inRange(
+              payment.paid_at || payment.created_at,
+              bucketStart < periodRange.start
+                ? periodRange.start
+                : bucketStart,
+              bucketEnd > periodRange.end
+                ? periodRange.end
+                : bucketEnd
+            )
+        )
+        .reduce(
+          (sum, payment) =>
+            sum + paymentAmountInEuros(payment),
+          0
+        );
+
+      buckets.push({
+        date: cursor,
+        label: formatBucketLabel(
+          cursor,
+          requestedGranularity
+        ),
+        collected,
+      });
+
+      cursor = bucketEnd;
+      guard += 1;
+    }
+
+    return {
+      granularity: requestedGranularity,
+      buckets,
+    };
+  }, [
+    chartGranularity,
+    data.payments,
+    periodRange,
+  ]);
+
+  const attention = useMemo(() => {
+    const rows = [
+      {
+        key: "overdue-invoices",
+        icon: CreditCard,
+        title: "Facturas vencidas",
+        detail: `${compactNumber.format(metrics.overdueInvoices.length)} facturas pendientes`,
+        value: euro.format(metrics.overdueAmount),
+        tone: "danger" as const,
+        section: "invoices" as EmployeeHomeSection,
+      },
+      {
+        key: "overdue-milestones",
+        icon: Flag,
+        title: "Hitos retrasados",
+        detail: `${compactNumber.format(metrics.affectedMilestoneProjects)} proyectos afectados`,
+        value: compactNumber.format(metrics.overdueMilestones.length),
+        tone: "warning" as const,
+        section: "projects" as EmployeeHomeSection,
+      },
+      {
+        key: "company-changes",
+        icon: Building2,
+        title: "Cambios de empresa",
+        detail: "Solicitudes pendientes",
+        value: compactNumber.format(metrics.pendingChanges),
+        tone: "warning" as const,
+        section: "companyChanges" as EmployeeHomeSection,
+      },
+      {
+        key: "automation-errors",
+        icon: Zap,
+        title: "Automatizaciones con errores",
+        detail: "Ejecuciones con error en el periodo",
+        value: compactNumber.format(metrics.automationErrors),
+        tone: "danger" as const,
+        section: "automationRuns" as EmployeeHomeSection,
+      },
+      {
+        key: "audit-requests",
+        icon: FileText,
+        title: "Nuevas auditorías",
+        detail: "Solicitudes con estado nuevo",
+        value: compactNumber.format(metrics.newAudits),
+        tone: "neutral" as const,
+        section: "audits" as EmployeeHomeSection,
+      },
+    ];
+
+    // Se muestran siempre las categorías principales, incluso cuando el
+    // contador es 0. Así el worker tiene una lectura estable del centro
+    // operativo y no desaparecen categorías por el formato monetario.
+    return rows;
+  }, [metrics]);
+
+  const latestActivity = useMemo(
+    () => data.activity.slice(0, 5),
+    [data.activity]
+  );
+
+  const allUpcomingEvents = useMemo<UpcomingEvent[]>(() => {
+    const today = startOfDay(now);
+    const events: UpcomingEvent[] = [];
+
+    data.invoices.forEach((invoice) => {
+      const date = toDate(invoice.fecha_vencimiento);
+      if (
+        !date ||
+        date < today ||
+        isPaidInvoice(invoice) ||
+        isCancelledInvoice(invoice)
+      ) {
+        return;
+      }
+
+      const companyName = invoice.company_id
+        ? companyById.get(invoice.company_id)?.company_name
+        : null;
+
+      events.push({
+        id: `invoice-${invoice.id}`,
+        kind: "invoice",
+        title: safeText(invoice.numero_factura, "Factura pendiente"),
+        subtitle: `${safeText(companyName, "Empresa")} · ${daysUntilLabel(date)}`,
+        date,
+        value: invoiceOutstanding(invoice),
+        section: "invoices",
+      });
+    });
+
+    data.projects.forEach((project) => {
+      const date = toDate(project.fecha_fin);
+      if (
+        !date ||
+        date < today ||
+        !["activo", "pendiente", "pausado"].includes(
+          normalizeStatus(project.estado)
+        )
+      ) {
+        return;
+      }
+
+      events.push({
+        id: `project-${project.id}`,
+        kind: "project",
+        title: safeText(project.nombre, "Proyecto"),
+        subtitle: `Finaliza · ${daysUntilLabel(date)}`,
+        date,
+        section: "projects",
+      });
+    });
+
+    data.quotations.forEach((quotation) => {
+      const date = toDate(quotation.fecha_validez);
+      if (
+        !date ||
+        date < today ||
+        normalizeStatus(quotation.estado) !== "pendiente"
+      ) {
+        return;
+      }
+
+      events.push({
+        id: `quotation-${quotation.id}`,
+        kind: "quotation",
+        title: safeText(
+          quotation.numero_presupuesto,
+          safeText(quotation.titulo, "Presupuesto")
+        ),
+        subtitle: `Caduca · ${daysUntilLabel(date)}`,
+        date,
+        value: Number(
+          quotation.precio_total ?? quotation.precio_base ?? 0
+        ),
+        section: "quotations",
+      });
+    });
+
+    data.milestones.forEach((milestone) => {
+      const date = toDate(milestone.fecha_prevista);
+      if (!date || date < today || isCompletedMilestone(milestone)) {
+        return;
+      }
+
+      const project = milestone.project_id
+        ? projectById.get(milestone.project_id)
+        : null;
+
+      events.push({
+        id: `milestone-${milestone.id}`,
+        kind: "milestone",
+        title: safeText(milestone.nombre, "Hito"),
+        subtitle: `${safeText(project?.nombre, "Proyecto")} · ${daysUntilLabel(date)}`,
+        date,
+        section: "projects",
+      });
+    });
+
+    data.contracts.forEach((contract) => {
+      const date = toDate(contract.fecha_fin);
+      if (
+        !date ||
+        date < today ||
+        !["activo", "pausado"].includes(normalizeStatus(contract.estado))
+      ) {
+        return;
+      }
+
+      events.push({
+        id: `contract-${contract.id}`,
+        kind: "contract",
+        title: safeText(contract.nombre_plan, "Contrato de mantenimiento"),
+        subtitle: `Finaliza · ${daysUntilLabel(date)}`,
+        date,
+        value: Number(contract.precio ?? 0),
+        section: "maintenance",
+      });
+    });
+
+    return events.sort((a, b) => a.date.getTime() - b.date.getTime());
+  }, [
+    companyById,
+    data.contracts,
+    data.invoices,
+    data.milestones,
+    data.projects,
+    data.quotations,
+    now,
+    projectById,
+  ]);
+
+  const upcomingEvents = useMemo(() => {
+    const today = startOfDay(now);
+    const limit = addDays(today, 3);
+
+    const priority: Record<
+      "invoice" | "project" | "quotation" | "milestone",
+      number
+    > = {
+      invoice: 0,
+      project: 1,
+      quotation: 2,
+      milestone: 3,
+    };
+
+    return allUpcomingEvents
+      .filter(
+        (event) =>
+          event.date <= limit &&
+          event.kind !== "contract"
+      )
+      .sort((a, b) => {
+        const priorityDifference =
+          priority[a.kind as keyof typeof priority] -
+          priority[b.kind as keyof typeof priority];
+
+        if (priorityDifference !== 0) return priorityDifference;
+        return a.date.getTime() - b.date.getTime();
+      })
+      .slice(0, 8);
+  }, [allUpcomingEvents, now]);
+
+  const calendarDays = useMemo(() => {
+    const firstDay = startOfMonth(calendarMonth);
+    const offset = firstDay.getDay();
+    const firstCell = addDays(firstDay, -offset);
+
+    return Array.from({ length: 42 }, (_, index) =>
+      addDays(firstCell, index)
+    );
+  }, [calendarMonth]);
+
+  const selectedCalendarEvents = useMemo(
+    () =>
+      allUpcomingEvents.filter(
+        (event) =>
+          format(event.date, "yyyy-MM-dd") ===
+          format(calendarSelectedDay, "yyyy-MM-dd")
+      ),
+    [allUpcomingEvents, calendarSelectedDay]
+  );
+
+  const greeting = useMemo(() => {
+    const hour = now.getHours();
+    if (hour < 12) return "Buenos días";
+    if (hour < 19) return "Buenas tardes";
+    return "Buenas noches";
+  }, [now]);
+
+  const firstName = useMemo(() => {
+    const value = data.workerName.trim();
+    return value ? value.split(/\s+/)[0] : "equipo";
+  }, [data.workerName]);
+
+  const handlePeriodChange = useCallback(
+    (nextPeriod: DashboardPeriod) => {
+      setPeriod(nextPeriod);
+      setPeriodMenuOpen(false);
+
+      if (nextPeriod !== "custom") {
+        setCustomStart(null);
+        setCustomEnd(null);
+      }
+    },
+    []
+  );
+
+  const customStartValue = customStart
+    ? format(customStart, "yyyy-MM-dd")
+    : "";
+
+  const customEndValue = customEnd
+    ? format(customEnd, "yyyy-MM-dd")
+    : "";
+
+  return (
+    <div className="min-h-screen bg-white text-[#172033]">
+      {menuOpen ? (
+        <div
+          className="fixed inset-0 z-40 bg-[#172033]/20 backdrop-blur-[1px]"
+          onClick={() => setMenuOpen(false)}
+          aria-hidden="true"
+        />
+      ) : null}
+
+      <aside
+        className={`fixed inset-y-0 left-0 z-50 flex w-[300px] max-w-[86vw] flex-col border-r border-[#E6E9EE] bg-white transition-transform duration-200 ease-out ${
+          menuOpen ? "translate-x-0" : "-translate-x-full"
+        }`}
+        aria-hidden={!menuOpen}
+      >
+        <div className="flex h-[72px] items-center justify-between border-b border-[#EEF1F4] px-6">
+          <div>
+            <p className="text-lg font-semibold tracking-[-0.025em] text-[#172033]">
+              MODIRA
+            </p>
+            <p className="mt-0.5 text-[10px] font-semibold uppercase tracking-[0.15em] text-[#9AA2AE]">
+              Operaciones
+            </p>
+          </div>
+
+          <button
+            type="button"
+            onClick={() => setMenuOpen(false)}
+            className="inline-flex h-9 w-9 items-center justify-center rounded-lg text-[#7B8594] transition-colors hover:bg-[#F6F7F9] hover:text-[#172033]"
+            aria-label="Cerrar menú"
+          >
+            <X className="h-5 w-5" strokeWidth={1.7} />
+          </button>
+        </div>
+
+        <nav className="flex-1 overflow-y-auto px-4 py-5">
+          <div className="space-y-6">
+            <MenuGroup
+              title="Principal"
+              items={[
+                {
+                  id: "dashboard",
+                  label: "Dashboard",
+                  icon: BarChart3,
+                },
+              ]}
+              active="dashboard"
+              onNavigate={(id) => {
+                navigate(id);
+                setMenuOpen(false);
+              }}
+            />
+
+            <MenuGroup
+              title="Gestión"
+              items={[
+                { id: "projects", label: "Proyectos", icon: FolderKanban },
+                { id: "companies", label: "Empresas", icon: Building2 },
+                { id: "quotations", label: "Presupuestos", icon: FileText },
+                { id: "invoices", label: "Facturación", icon: CreditCard },
+                { id: "payments", label: "Pagos", icon: CircleDollarSign },
+                { id: "support", label: "Tickets", icon: Ticket },
+              ]}
+              onNavigate={(id) => {
+                navigate(id);
+                setMenuOpen(false);
+              }}
+            />
+
+            <MenuGroup
+              title="Comunicación"
+              items={[
+                { id: "ai", label: "Conversaciones IA", icon: Zap },
+                { id: "notifications", label: "Notificaciones", icon: Bell },
+              ]}
+              onNavigate={(id) => {
+                navigate(id);
+                setMenuOpen(false);
+              }}
+            />
+
+            <MenuGroup
+              title="Operaciones"
+              items={[
+                { id: "activity", label: "Actividad", icon: Activity },
+                { id: "audits", label: "Auditorías", icon: FileText },
+                {
+                  id: "companyChanges",
+                  label: "Cambios de empresa",
+                  icon: Building2,
+                },
+                {
+                  id: "maintenance",
+                  label: "Contratos de mantenimiento",
+                  icon: CalendarDays,
+                },
+              ]}
+              onNavigate={(id) => {
+                navigate(id);
+                setMenuOpen(false);
+              }}
+            />
+
+            <MenuGroup
+              title="Automatización"
+              items={[
+                { id: "automations", label: "Automatizaciones", icon: Zap },
+                {
+                  id: "automationRuns",
+                  label: "Ejecuciones",
+                  icon: RefreshCw,
+                },
+              ]}
+              onNavigate={(id) => {
+                navigate(id);
+                setMenuOpen(false);
+              }}
+            />
+          </div>
+        </nav>
+
+        <div className="border-t border-[#EEF1F4] px-6 py-5">
+          <p className="text-xs text-[#8A94A4]">
+            Sesión de trabajador interno
+          </p>
+          <p className="mt-1 truncate text-sm font-medium text-[#344154]">
+            {data.workerName || "Trabajador"}
+          </p>
+        </div>
+      </aside>
+
+      <main className="mx-auto w-full max-w-[1500px] px-5 pb-12 pt-5 sm:px-7 lg:px-10 xl:px-12">
+        <header className="flex min-h-[52px] items-center justify-between gap-4">
+          <div className="flex items-center gap-3">
+            <button
+              type="button"
+              onClick={() => setMenuOpen(true)}
+              className="inline-flex h-10 w-10 items-center justify-center rounded-lg text-[#5F6B7C] transition-colors hover:bg-[#F5F7F9] hover:text-[#172033]"
+              aria-label="Abrir menú de navegación"
+            >
+              <Menu className="h-5 w-5" strokeWidth={1.7} />
+            </button>
+
+            <div className="hidden sm:block">
+              <p className="text-sm font-semibold text-[#263044]">
+                Dashboard
+              </p>
+              <p className="text-xs text-[#939CAA]">
+                Centro de operaciones
+              </p>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-2.5">
+            <div ref={newRef} className="relative">
+              <button
+                type="button"
+                onClick={() => setNewMenuOpen((value) => !value)}
+                className="inline-flex h-10 items-center gap-2 rounded-lg border border-[#DDE2E8] px-3.5 text-sm font-medium text-[#344154] transition-colors hover:bg-[#F8F9FA]"
+              >
+                Nuevo
+                <ChevronDown className="h-3.5 w-3.5" strokeWidth={1.8} />
+              </button>
+
+              {newMenuOpen ? (
+                <div className="absolute right-0 top-12 z-30 w-48 rounded-xl border border-[#E1E5EA] bg-white p-1.5">
+                  <NewMenuItem
+                    icon={FileText}
+                    label="Presupuesto"
+                    onClick={() => triggerNew("quotation")}
+                  />
+                  <NewMenuItem
+                    icon={FolderKanban}
+                    label="Proyecto"
+                    onClick={() => triggerNew("project")}
+                  />
+                  <NewMenuItem
+                    icon={CreditCard}
+                    label="Factura"
+                    onClick={() => triggerNew("invoice")}
+                  />
+                </div>
+              ) : null}
+            </div>
+
+            <button
+              type="button"
+              onClick={() => void loadDashboard(true)}
+              disabled={refreshing}
+              className="inline-flex h-10 w-10 items-center justify-center rounded-lg text-[#7A8595] transition-colors hover:bg-[#F5F7F9] hover:text-[#344154] disabled:cursor-wait disabled:opacity-60"
+              aria-label="Actualizar dashboard"
+              title="Actualizar"
+            >
+              <RefreshCw
+                className={`h-4 w-4 ${refreshing ? "animate-spin" : ""}`}
+                strokeWidth={1.7}
+              />
+            </button>
+
+            <div className="hidden h-9 w-9 items-center justify-center rounded-full bg-[#F0F2F5] text-xs font-semibold text-[#566173] sm:flex">
+              {firstName.slice(0, 1).toUpperCase()}
+            </div>
+          </div>
+        </header>
+
+        <section className="mt-5">
+          <div className="flex flex-col gap-5 border-b border-[#E9ECF0] pb-7 lg:flex-row lg:items-end lg:justify-between">
+            <div>
+              <p className="text-sm font-medium text-[#7C8797]">
+                {greeting}, {firstName}
+              </p>
+              <h1 className="mt-1.5 text-[28px] font-semibold tracking-[-0.04em] text-[#172033] sm:text-[32px]">
+                Estado general de Modira
+              </h1>
+            </div>
+
+            <div ref={periodRef} className="relative shrink-0">
+              <button
+                type="button"
+                onClick={() => setPeriodMenuOpen((value) => !value)}
+                className="inline-flex h-10 items-center gap-2 rounded-lg border border-[#DDE2E8] bg-white px-3.5 text-sm font-medium text-[#344154]"
+              >
+                <Clock3 className="h-4 w-4 text-[#7C8797]" strokeWidth={1.7} />
+                {periodRange.label}
+                <ChevronDown
+                  className="h-3.5 w-3.5 text-[#8A94A3]"
+                  strokeWidth={1.8}
+                />
+              </button>
+
+              {periodMenuOpen ? (
+                <div className="absolute right-0 top-12 z-30 w-56 rounded-xl border border-[#E1E5EA] bg-white p-1.5">
+                  {(
+                    [
+                      "today",
+                      "7d",
+                      "30d",
+                      "month",
+                      "previousMonth",
+                      "quarter",
+                      "year",
+                      "custom",
+                    ] as DashboardPeriod[]
+                  ).map((option) => (
+                    <button
+                      key={option}
+                      type="button"
+                      onClick={() => handlePeriodChange(option)}
+                      className={`flex w-full items-center justify-between rounded-lg px-3 py-2 text-left text-sm ${
+                        period === option
+                          ? "bg-[#F5F7F9] font-medium text-[#172033]"
+                          : "text-[#596577] hover:bg-[#F8F9FA]"
+                      }`}
+                    >
+                      <span>{periodLabels[option]}</span>
+                      {period === option ? (
+                        <CheckCircle2
+                          className="h-3.5 w-3.5 text-[#667386]"
+                          strokeWidth={1.8}
+                        />
+                      ) : null}
+                    </button>
+                  ))}
+
+                  {period === "custom" ? (
+                    <div className="mt-1 border-t border-[#EEF1F4] p-2">
+                      <label className="block text-[11px] font-medium text-[#7D8797]">
+                        Desde
+                      </label>
+                      <input
+                        type="date"
+                        value={customStartValue}
+                        onChange={(event) => {
+                          const next = toDate(event.target.value);
+                          if (next) setCustomStart(startOfDay(next));
+                        }}
+                        className="mt-1 h-9 w-full rounded-lg border border-[#DDE2E8] bg-white px-2.5 text-xs text-[#344154] outline-none focus:border-[#B9C2CF]"
+                      />
+
+                      <label className="mt-3 block text-[11px] font-medium text-[#7D8797]">
+                        Hasta
+                      </label>
+                      <input
+                        type="date"
+                        value={customEndValue}
+                        onChange={(event) => {
+                          const next = toDate(event.target.value);
+                          if (next) setCustomEnd(endOfDay(next));
+                        }}
+                        className="mt-1 h-9 w-full rounded-lg border border-[#DDE2E8] bg-white px-2.5 text-xs text-[#344154] outline-none focus:border-[#B9C2CF]"
+                      />
+                    </div>
+                  ) : null}
+                </div>
+              ) : null}
+            </div>
+          </div>
+        </section>
+
+        {errors.length > 0 ? (
+          <div className="mt-5 flex items-start gap-2 border-b border-[#F0E2D2] pb-4 text-xs text-[#8C6A3E]">
+            <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" strokeWidth={1.7} />
+            <span>
+              Algunos bloques no han podido actualizarse: {errors.join(", ")}.
+            </span>
+          </div>
+        ) : null}
+
+        <section className="mt-6">
+          <div className="overflow-hidden rounded-xl border border-[#E2E6EB]">
+            <div className="grid divide-y divide-[#E8EBEF] sm:grid-cols-2 sm:divide-x sm:divide-y-0 xl:grid-cols-4">
+              {loading ? (
+                Array.from({ length: 4 }).map((_, index) => (
+                  <div key={index} className="px-5 py-5 sm:px-6">
+                    <SkeletonBlock className="h-4 w-28" />
+                    <SkeletonBlock className="mt-4 h-8 w-32" />
+                    <SkeletonBlock className="mt-2 h-3 w-40" />
+                  </div>
+                ))
+              ) : (
+                <>
+                  <PrimaryMetric
+                    icon={CircleDollarSign}
+                    label="Ingresos cobrados"
+                    value={euro.format(metrics.collected)}
+                    detail="Pagos Stripe con estado succeeded"
+                    onClick={() => navigate("payments")}
+                  />
+                  <PrimaryMetric
+  icon={BarChart3}
+  label="Facturación neta"
+  value={euro.format(metrics.billedNet)}
+  detail={`Bruto con IVA · ${euro.format(metrics.billedGross)}`}
+  onClick={() => navigate("invoices")}
+/>
+                  <PrimaryMetric
+                    icon={CreditCard}
+                    label="Pendiente de cobro"
+                    value={euro.format(metrics.outstanding)}
+                    detail={`${compactNumber.format(metrics.outstandingInvoiceCount)} facturas pendientes`}
+                    onClick={() => navigate("invoices")}
+                  />
+                  <PrimaryMetric
+                    icon={FileText}
+                    label="Pipeline comercial"
+                    value={euro.format(metrics.pipeline)}
+                    detail={`${compactNumber.format(metrics.pipelineCount)} presupuestos pendientes`}
+                    onClick={() => navigate("quotations")}
+                  />
+                </>
+              )}
+            </div>
+          </div>
+        </section>
+
+        <section className="mt-3">
+          <div className="grid border-t border-[#E8EBEF] sm:grid-cols-2 lg:grid-cols-4 lg:divide-x lg:divide-[#E8EBEF]">
+            {loading ? (
+              Array.from({ length: 4 }).map((_, index) => (
+                <div key={index} className="py-4 sm:px-5">
+                  <SkeletonBlock className="h-4 w-20" />
+                  <SkeletonBlock className="mt-2 h-7 w-14" />
+                  <SkeletonBlock className="mt-1 h-3 w-28" />
+                </div>
+              ))
+            ) : (
+              <>
+                <SecondaryMetric
+                  icon={BriefcaseBusiness}
+                  label="Usuarios"
+                  value={compactNumber.format(metrics.activeUsers)}
+                  detail={`+${compactNumber.format(metrics.newUsers)} en el periodo`}
+                />
+                <SecondaryMetric
+                  icon={FolderKanban}
+                  label="Proyectos activos"
+                  value={compactNumber.format(metrics.activeProjects)}
+                  detail={`${metrics.pendingProjects} pendientes · ${metrics.pausedProjects} pausados · ${metrics.completedProjects} completados`}
+                />
+                <SecondaryMetric
+                  icon={Ticket}
+                  label="Tickets abiertos"
+                  value={compactNumber.format(metrics.openTickets)}
+                  detail={`${metrics.highPriorityTickets} alta prioridad`}
+                />
+                <SecondaryMetric
+                  icon={CalendarDays}
+                  label="Contratos activos"
+                  value={compactNumber.format(metrics.activeContracts)}
+                  detail={`${euro.format(metrics.activeContractsValue)}/mes equivalente`}
+                />
+              </>
+            )}
+          </div>
+        </section>
+
+        <section className="mt-8 grid gap-8 xl:grid-cols-[minmax(0,1.8fr)_minmax(330px,0.85fr)]">
+          <div className="min-w-0">
+            <div className="flex items-end justify-between gap-4">
+              <div>
+                <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-[#8A93A3]">
+                  Cobros
+                </p>
+                <h2 className="mt-1 text-[18px] font-semibold tracking-[-0.015em] text-[#172033]">
+                  Ingresos cobrados
+                </h2>
+              </div>
+
+              <div ref={chartRef} className="relative">
+                <button
+                  type="button"
+                  onClick={() => setChartMenuOpen((value) => !value)}
+                  className="inline-flex h-9 items-center gap-2 rounded-lg border border-[#E0E4E9] px-3 text-xs font-medium text-[#566274]"
+                >
+                  {chartGranularityLabels[chartGranularity]}
+                  <ChevronDown
+                    className="h-3.5 w-3.5 text-[#8E97A4]"
+                    strokeWidth={1.8}
+                  />
+                </button>
+
+                {chartMenuOpen ? (
+                  <div className="absolute right-0 top-11 z-20 w-40 rounded-xl border border-[#E1E5EA] bg-white p-1.5">
+                    {(
+                      ["auto", "day", "week", "month", "quarter"] as ChartGranularity[]
+                    ).map((option) => (
+                      <button
+                        key={option}
+                        type="button"
+                        onClick={() => {
+                          setChartGranularity(option);
+                          setChartMenuOpen(false);
+                        }}
+                        className="flex w-full rounded-lg px-3 py-2 text-left text-xs text-[#596577] hover:bg-[#F7F8FA]"
+                      >
+                        {chartGranularityLabels[option]}
+                      </button>
+                    ))}
+                  </div>
+                ) : null}
+              </div>
+            </div>
+
+            <div className="mt-4 min-h-[330px] border-y border-[#E8EBEF] py-3">
+              {loading ? (
+                <div className="space-y-4 px-2 py-8">
+                  <SkeletonBlock className="h-3 w-full" />
+                  <SkeletonBlock className="h-32 w-full" />
+                  <SkeletonBlock className="h-3 w-2/3" />
+                </div>
+              ) : chartData.buckets.length === 0 ? (
+                <div className="flex min-h-[300px] items-center justify-center text-sm text-[#8B95A4]">
+                  No hay datos de cobros para el periodo seleccionado.
+                </div>
+              ) : (
+                <RevenueChart
+                  buckets={chartData.buckets}
+                  granularity={chartData.granularity}
+                />
+              )}
+            </div>
+          </div>
+
+          <div className="min-w-0 xl:border-l xl:border-[#E8EBEF] xl:pl-8">
+            <SectionTitle title="Requiere atención" />
+
+            <div className="mt-3 border-t border-[#E8EBEF]">
+              {loading ? (
+                <div className="space-y-5 py-5">
+                  <SkeletonBlock className="h-9 w-full" />
+                  <SkeletonBlock className="h-9 w-full" />
+                  <SkeletonBlock className="h-9 w-full" />
+                  <SkeletonBlock className="h-9 w-full" />
+                </div>
+              ) : attention.length === 0 ? (
+                <div className="py-8">
+                  <div className="flex items-center gap-2 text-sm font-medium text-[#445165]">
+                    <CheckCircle2
+                      className="h-4 w-4 text-[#6F7D8E]"
+                      strokeWidth={1.7}
+                    />
+                    No hay asuntos pendientes destacados.
+                  </div>
+                  <p className="mt-1 pl-6 text-xs leading-5 text-[#9099A7]">
+                    El estado operativo no presenta incidencias de las categorías
+                    monitorizadas.
+                  </p>
+                </div>
+              ) : (
+                attention.map((row) => (
+                  <div key={row.key}>
+                    <AttentionRow
+                      icon={row.icon}
+                      title={row.title}
+                      detail={row.detail}
+                      value={row.value}
+                      tone={row.tone}
+                      onClick={() => navigate(row.section)}
+                    />
+                  </div>
+                ))
+              )}
+            </div>
+          </div>
+        </section>
+
+        <section className="mt-8 grid gap-8 lg:grid-cols-[minmax(0,1.65fr)_minmax(280px,0.85fr)]">
+          <div className="min-w-0">
+            <SectionTitle
+              eyebrow="Trazabilidad"
+              title="Actividad reciente"
+              action="Ver toda la actividad"
+              onAction={() => navigate("activity")}
+            />
+
+            <div className="mt-4 border-y border-[#E8EBEF]">
+              {loading ? (
+                <div className="space-y-5 py-5">
+                  {Array.from({ length: 5 }).map((_, index) => (
+                    <div key={index}>
+                      <SkeletonBlock className="h-4 w-2/3" />
+                      <SkeletonBlock className="mt-2 h-3 w-1/2" />
+                    </div>
+                  ))}
+                </div>
+              ) : latestActivity.length === 0 ? (
+                <div className="py-9 text-sm text-[#8B95A4]">
+                  Todavía no hay actividad registrada para mostrar.
+                </div>
+              ) : (
+                latestActivity.map((item) => {
+                  const actor = item.user_id
+                    ? profileById.get(item.user_id)?.nombre
+                    : null;
+                  const companyName = item.company_id
+                    ? companyById.get(item.company_id)?.company_name
+                    : null;
+                  const time = toDate(item.created_at);
+
+                  return (
+                    <button
+                      key={item.id}
+                      type="button"
+                      onClick={() => navigate("activity")}
+                      className="group flex w-full items-center gap-4 border-b border-[#EEF1F4] py-4 text-left last:border-b-0"
+                    >
+                      <span className="min-w-0 flex-1">
+                        <span className="block truncate text-sm font-medium text-[#344154] group-hover:text-[#172033]">
+                          {safeText(
+                            item.description,
+                            safeText(item.action, "Actividad registrada")
+                          )}
+                        </span>
+                        <span className="mt-1 block truncate text-xs text-[#919AA8]">
+                          {actor ? `${actor} · ` : ""}
+                          {companyName ? `${companyName} · ` : ""}
+                          {time
+                            ? formatDistanceToNow(time, {
+                                addSuffix: true,
+                                locale: es,
+                              })
+                            : "Fecha no disponible"}
+                        </span>
+                      </span>
+
+                      <span className="hidden items-center gap-1 text-xs font-medium text-[#8A94A2] sm:flex">
+                        {item.resource_type}
+                        <ArrowRight
+                          className="h-3.5 w-3.5 opacity-0 transition-opacity group-hover:opacity-100"
+                          strokeWidth={1.7}
+                        />
+                      </span>
+                    </button>
+                  );
+                })
+              )}
+            </div>
+          </div>
+
+          <div className="min-w-0 lg:border-l lg:border-[#E8EBEF] lg:pl-8">
+            <div className="flex items-end justify-between gap-3">
+              <div>
+                <SectionTitle eyebrow="Seguimiento" title="Próximos vencimientos" />
+                <p className="mt-1 text-xs text-[#929AAA]">
+                  Fechas previstas para los próximos 3 días.
                 </p>
               </div>
-            );
-          })}
-        </div>
-      
+              <button
+                type="button"
+                onClick={() => {
+                  setCalendarMonth(startOfMonth(now));
+                  setCalendarSelectedDay(startOfDay(now));
+                  setCalendarOpen(true);
+                }}
+                className="mb-0.5 inline-flex shrink-0 items-center gap-1.5 text-xs font-medium text-[#667285] transition-colors hover:text-[#172033]"
+                title="Ver calendario"
+              >
+                <CalendarDays className="h-3.5 w-3.5" strokeWidth={1.7} />
+                Calendario
+              </button>
+            </div>
 
-      {/* Mobile explanation */}
-      <div className="relative z-10 mt-8 text-center md:hidden">
-        <p className="text-sm text-[#52627A]">
-          Modira conecta tus herramientas y automatiza el flujo de información
-          entre ellas.
-        </p>
+            <div className="mt-4 max-h-[360px] overflow-y-auto border-y border-[#E8EBEF] pr-1">
+              {loading ? (
+                <div className="space-y-5 py-5">
+                  {Array.from({ length: 5 }).map((_, index) => (
+                    <div key={index} className="py-1">
+                      <SkeletonBlock className="h-4 w-3/4" />
+                      <SkeletonBlock className="mt-2 h-3 w-1/2" />
+                    </div>
+                  ))}
+                </div>
+              ) : upcomingEvents.length === 0 ? (
+                <div className="py-8 text-sm text-[#8B95A4]">
+                  No hay vencimientos en los próximos 3 días.
+                </div>
+              ) : (
+                upcomingEvents.map((event) => (
+                  <button
+                    key={event.id}
+                    type="button"
+                    onClick={() => navigate(event.section)}
+                    className="group flex w-full items-center justify-between gap-4 border-b border-[#EEF1F4] py-3.5 text-left last:border-b-0"
+                  >
+                    <span className="min-w-0">
+                      <span className="flex items-center gap-2">
+                        <span
+                          className={`h-1.5 w-1.5 shrink-0 rounded-full ${
+                            event.kind === "invoice"
+                              ? "bg-[#B54747]"
+                              : event.kind === "project"
+                                ? "bg-[#9A6B18]"
+                                : "bg-[#9AA3AF]"
+                          }`}
+                        />
+                        <span className="truncate text-sm font-medium text-[#344154] group-hover:text-[#172033]">
+                          {event.title}
+                        </span>
+                      </span>
+                      <span className="mt-1 block truncate pl-3.5 text-xs text-[#919AA8]">
+                        {event.subtitle} · {format(event.date, "d MMM", { locale: es })}
+                      </span>
+                    </span>
+
+                    <span className="shrink-0 text-right">
+                      {event.kind === "invoice" && event.value != null ? (
+                        <span className="block text-sm font-semibold text-[#263044]">
+                          {euro.format(event.value)}
+                        </span>
+                      ) : event.kind === "quotation" && event.value != null ? (
+                        <span className="block text-xs font-medium text-[#667285]">
+                          {euro.format(event.value)}
+                        </span>
+                      ) : (
+                        <span className="block text-xs font-medium capitalize text-[#7C8797]">
+                          {event.kind === "project"
+                            ? "Proyecto"
+                            : event.kind === "milestone"
+                              ? "Hito"
+                              : "Contrato"}
+                        </span>
+                      )}
+                    </span>
+                  </button>
+                ))
+              )}
+            </div>
+          </div>
+        </section>
+
+        {calendarOpen ? (
+          <div
+            className="fixed inset-0 z-50 flex items-center justify-center bg-[#172033]/20 p-4"
+            role="dialog"
+            aria-modal="true"
+            aria-label="Calendario de fechas importantes"
+            onMouseDown={(event) => {
+              if (event.target === event.currentTarget) {
+                setCalendarOpen(false);
+              }
+            }}
+          >
+            <div className="w-full max-w-4xl overflow-hidden rounded-xl border border-[#E1E5EA] bg-white">
+              <div className="flex items-center justify-between gap-4 border-b border-[#E8EBEF] px-5 py-4">
+                <div>
+                  <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-[#9AA2AE]">
+                    Fechas importantes
+                  </p>
+                  <h2 className="mt-1 text-base font-semibold capitalize text-[#263044]">
+                    {format(calendarMonth, "MMMM yyyy", { locale: es })}
+                  </h2>
+                </div>
+
+                <div className="flex items-center gap-1">
+                  <button
+                    type="button"
+                    onClick={() =>
+                      setCalendarMonth((month) => addMonths(month, -1))
+                    }
+                    className="rounded-md p-2 text-[#687486] hover:bg-[#F5F6F8] hover:text-[#263044]"
+                    aria-label="Mes anterior"
+                  >
+                    <ChevronDown
+                      className="h-4 w-4 rotate-90"
+                      strokeWidth={1.7}
+                    />
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const today = startOfDay(now);
+                      setCalendarMonth(startOfMonth(today));
+                      setCalendarSelectedDay(today);
+                    }}
+                    className="px-2.5 py-1.5 text-xs font-medium text-[#687486] hover:text-[#263044]"
+                  >
+                    Hoy
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() =>
+                      setCalendarMonth((month) => addMonths(month, 1))
+                    }
+                    className="rounded-md p-2 text-[#687486] hover:bg-[#F5F6F8] hover:text-[#263044]"
+                    aria-label="Mes siguiente"
+                  >
+                    <ChevronDown
+                      className="h-4 w-4 -rotate-90"
+                      strokeWidth={1.7}
+                    />
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setCalendarOpen(false)}
+                    className="ml-1 rounded-md p-2 text-[#687486] hover:bg-[#F5F6F8] hover:text-[#263044]"
+                    aria-label="Cerrar calendario"
+                  >
+                    <X className="h-4 w-4" strokeWidth={1.7} />
+                  </button>
+                </div>
+              </div>
+
+              <div className="grid lg:grid-cols-[minmax(0,1fr)_280px]">
+                <div className="p-5">
+                  <div className="grid grid-cols-7 border-b border-[#E8EBEF] pb-2 text-center text-[10px] font-semibold uppercase tracking-[0.12em] text-[#9AA2AE]">
+                    {["dom", "lun", "mar", "mié", "jue", "vie", "sáb"].map(
+                      (day) => (
+                        <span key={day}>{day}</span>
+                      )
+                    )}
+                  </div>
+
+                  <div className="mt-2 grid grid-cols-7 overflow-hidden rounded-lg border border-[#E8EBEF]">
+                    {calendarDays.map((day) => {
+                      const dayKey = format(day, "yyyy-MM-dd");
+                      const dayEvents = allUpcomingEvents.filter(
+                        (event) => format(event.date, "yyyy-MM-dd") === dayKey
+                      );
+                      const isCurrentMonth =
+                        day.getMonth() === calendarMonth.getMonth() &&
+                        day.getFullYear() === calendarMonth.getFullYear();
+                      const isSelected =
+                        format(day, "yyyy-MM-dd") ===
+                        format(calendarSelectedDay, "yyyy-MM-dd");
+                      const isToday =
+                        format(day, "yyyy-MM-dd") ===
+                        format(now, "yyyy-MM-dd");
+
+                      return (
+                        <button
+                          key={dayKey}
+                          type="button"
+                          onClick={() => setCalendarSelectedDay(day)}
+                          className={`relative min-h-[72px] border-b border-r border-[#EEF1F4] p-2 text-left transition-colors hover:bg-[#F8F9FA] ${
+                            !isCurrentMonth
+                              ? "bg-[#FAFBFC] text-[#B1B8C2]"
+                              : "text-[#526073]"
+                          } ${isSelected ? "bg-[#F3F5F7]" : ""}`}
+                        >
+                          <span
+                            className={`text-xs ${
+                              isToday
+                                ? "font-semibold text-[#172033]"
+                                : "font-medium"
+                            }`}
+                          >
+                            {format(day, "d")}
+                          </span>
+
+                          {dayEvents.length > 0 ? (
+                            <span className="mt-2 flex gap-1">
+                              {dayEvents.slice(0, 3).map((event) => (
+                                <span
+                                  key={event.id}
+                                  className={`h-1.5 w-1.5 rounded-full ${
+                                    event.kind === "invoice"
+                                      ? "bg-[#B54747]"
+                                      : event.kind === "project"
+                                        ? "bg-[#9A6B18]"
+                                        : "bg-[#9AA3AF]"
+                                  }`}
+                                  aria-hidden="true"
+                                />
+                              ))}
+                              {dayEvents.length > 3 ? (
+                                <span className="text-[9px] text-[#8A94A2]">
+                                  +{dayEvents.length - 3}
+                                </span>
+                              ) : null}
+                            </span>
+                          ) : null}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                <aside className="border-t border-[#E8EBEF] bg-[#FCFCFD] p-5 lg:border-l lg:border-t-0">
+                  <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-[#9AA2AE]">
+                    Seleccionado
+                  </p>
+                  <h3 className="mt-1 text-sm font-semibold capitalize text-[#344154]">
+                    {format(calendarSelectedDay, "EEEE, d MMMM", {
+                      locale: es,
+                    })}
+                  </h3>
+
+                  <div className="mt-4 max-h-[340px] overflow-y-auto border-y border-[#E8EBEF]">
+                    {selectedCalendarEvents.length === 0 ? (
+                      <p className="py-6 text-sm leading-6 text-[#8B95A4]">
+                        No hay fechas importantes registradas para este día.
+                      </p>
+                    ) : (
+                      selectedCalendarEvents.map((event) => (
+                        <button
+                          key={event.id}
+                          type="button"
+                          onClick={() => {
+                            setCalendarOpen(false);
+                            navigate(event.section);
+                          }}
+                          className="group flex w-full items-start justify-between gap-3 border-b border-[#EEF1F4] py-3 text-left last:border-b-0"
+                        >
+                          <span className="min-w-0">
+                            <span className="block truncate text-sm font-medium text-[#344154] group-hover:text-[#172033]">
+                              {event.title}
+                            </span>
+                            <span className="mt-1 block text-xs text-[#8E98A6]">
+                              {event.kind === "invoice"
+                                ? "Factura"
+                                : event.kind === "project"
+                                  ? "Proyecto"
+                                  : event.kind === "quotation"
+                                    ? "Presupuesto"
+                                    : event.kind === "milestone"
+                                      ? "Hito"
+                                      : "Contrato"}
+                            </span>
+                          </span>
+                          {event.value != null ? (
+                            <span className="shrink-0 text-xs font-semibold text-[#526073]">
+                              {euro.format(event.value)}
+                            </span>
+                          ) : null}
+                        </button>
+                      ))
+                    )}
+                  </div>
+                </aside>
+              </div>
+            </div>
+          </div>
+        ) : null}
+
+        <footer className="mt-8 border-t border-[#EEF1F4] pt-5 text-xs text-[#A0A8B3]">
+          Dashboard operativo · Modira
+        </footer>
+      </main>
+    </div>
+  );
+}
+
+function MenuGroup({
+  title,
+  items,
+  active,
+  onNavigate,
+}: {
+  title: string;
+  items: Array<{
+    id: EmployeeHomeSection;
+    label: string;
+    icon: typeof Activity;
+  }>;
+  active?: EmployeeHomeSection;
+  onNavigate: (id: EmployeeHomeSection) => void;
+}) {
+  return (
+    <section>
+      <p className="px-2 text-[10px] font-semibold uppercase tracking-[0.16em] text-[#9AA2AE]">
+        {title}
+      </p>
+      <div className="mt-2 space-y-0.5">
+        {items.map((item) => {
+          const Icon = item.icon;
+          const isActive = active === item.id;
+
+          return (
+            <button
+              key={item.id}
+              type="button"
+              onClick={() => onNavigate(item.id)}
+              className={`flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left text-sm transition-colors ${
+                isActive
+                  ? "bg-[#F2F4F7] font-medium text-[#172033]"
+                  : "text-[#596577] hover:bg-[#F7F8FA] hover:text-[#263044]"
+              }`}
+            >
+              <Icon
+                className="h-4 w-4 shrink-0"
+                strokeWidth={isActive ? 1.9 : 1.7}
+              />
+              <span>{item.label}</span>
+            </button>
+          );
+        })}
       </div>
     </section>
   );
 }
 
-function useScrollRevealElements() {
-  useEffect(() => {
-    const elements = document.querySelectorAll<HTMLElement>(
-      ".scroll-reveal-item"
-    );
-
-    if (!elements.length) return;
-
-    const observer = new IntersectionObserver(
-      (entries) => {
-        entries.forEach((entry) => {
-          if (entry.isIntersecting) {
-            entry.target.classList.add("is-visible");
-            observer.unobserve(entry.target);
-          }
-        });
-      },
-      {
-        threshold: 0.1,
-        rootMargin: "0px 0px -40px 0px",
-      }
-    );
-
-    elements.forEach((element) => observer.observe(element));
-
-    return () => observer.disconnect();
-  }, []);
-}
-
-export default function Home() {
-  useScrollRevealElements();
-
-  const [formData, setFormData] = useState({
-    nombre: "",
-    email: "",
-    empresa: "",
-    empleados: "",
-    proceso: "",
-  });
-  const [privacyAcknowledged, setPrivacyAcknowledged] = useState(false);
-  const [auditTermsAccepted, setAuditTermsAccepted] = useState(false);
-  const [savingsData, setSavingsData] = useState({
-    employees: 5,
-    hoursPerWeek: 10,
-    hourlyRate: 25,
-  });
-
-  const handleFormChange = (
-    e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>
-  ) => {
-    setFormData({
-      ...formData,
-      [e.target.name]: e.target.value,
-    });
-  };
-
-const handleFormSubmit = async (e: React.FormEvent) => {
-  e.preventDefault();
-  if (!privacyAcknowledged || !auditTermsAccepted) {
-    alert(
-      "Debes aceptar la Información de Privacidad y las Condiciones de la Auditoría Gratuita."
-    );
-    return;
-  }
-  try {
-    // AUDITORÍA V-10:
-    //
-    // El INSERT directo anónimo en audit_requests se ha retirado
-    // (migración 028). La solicitud pasa por la RPC
-    // submit_audit_request, que valida los datos y aplica un límite
-    // de 3 solicitudes por identidad y hora en el backend.
-    const { error } = await supabase.rpc("submit_audit_request", {
-      p_nombre: formData.nombre,
-      p_email: formData.email,
-      p_empresa: formData.empresa,
-      p_empleados: formData.empleados,
-      p_proceso: formData.proceso,
-      p_privacy_acknowledged: privacyAcknowledged,
-      p_audit_terms_accepted: auditTermsAccepted,
-    });
-
-    if (error) {
-      // No se exponen detalles internos de la base de datos al
-      // usuario; el detalle técnico queda solo en consola.
-      console.error("Error enviando la solicitud:", error.message);
-
-      alert(
-        error.message.includes("Demasiadas solicitudes")
-          ? "Has enviado demasiadas solicitudes. Por favor, inténtalo de nuevo más tarde."
-          : "No se ha podido enviar la solicitud. Revisa los datos e inténtalo de nuevo."
-      );
-
-      return;
-    }
-
-    alert("Gracias por tu solicitud. Te contactaremos pronto.");
-
-    setFormData({
-      nombre: "",
-      email: "",
-      empresa: "",
-      empleados: "",
-      proceso: "",
-    });
-    setPrivacyAcknowledged(false);
-    setAuditTermsAccepted(false);
-
-  } catch (error) {
-    console.error("Error inesperado:", error);
-    alert("Ha ocurrido un error inesperado.");
-  }
-};
-  const handleSavingsChange = (field: string, value: number) => {
-    setSavingsData({
-      ...savingsData,
-      [field]: value,
-    });
-  };
-
-  const weeklySavings = savingsData.employees * savingsData.hoursPerWeek;
-  const monthlySavings = weeklySavings * 4;
-  const yearlySavings = monthlySavings * 12;
-  const monthlyCost = weeklySavings * savingsData.hourlyRate * 4;
-
-
+function NewMenuItem({
+  icon: Icon,
+  label,
+  onClick,
+}: {
+  icon: typeof FileText;
+  label: string;
+  onClick: () => void;
+}) {
   return (
-    <div className="min-h-screen bg-white">
-      <style>{`
-  /* =========================================================
-     SCROLL REVEAL — EXISTENTE
-     ========================================================= */
-
-  .scroll-reveal-item {
-    opacity: 0;
-    transform: translateY(16px);
-    transition:
-      opacity 700ms ease-out,
-      transform 700ms cubic-bezier(0.22, 1, 0.36, 1);
-    will-change: transform, opacity;
-  }
-
-  .scroll-reveal-item.is-visible {
-    opacity: 1;
-    transform: translateY(0);
-  }
-
-
-  /* =========================================================
-   MODIRA — HERO LIGHT RAYS / WIDE SPOTLIGHT
-   ========================================================= */
-
-.hero-ray {
-  position: absolute;
-  top: -10%;
-  left: 50%;
-  height: 170%;
-  transform-origin: top center;
-  pointer-events: none;
-  will-change: transform, opacity;
-  mix-blend-mode: normal;
-}
-
-
-/* =========================================================
-   RAYO 1 — IZQUIERDA
-   ========================================================= */
-
-.hero-ray-1 {
-  width: 260px;
-  background: linear-gradient(
-    to bottom,
-    rgba(72, 116, 220, 0.68) 0%,
-    rgba(40, 84, 184, 0.48) 25%,
-    rgba(23, 59, 143, 0.22) 55%,
-    transparent 100%
-  );
-  filter: blur(38px);
-  animation: modira-ray-1 18s ease-in-out infinite;
-}
-
-
-/* =========================================================
-   RAYO 2 — IZQUIERDA INTERIOR
-   ========================================================= */
-
-.hero-ray-2 {
-  width: 220px;
-  background: linear-gradient(
-    to bottom,
-    rgba(96, 139, 235, 0.78) 0%,
-    rgba(50, 96, 205, 0.55) 25%,
-    rgba(23, 59, 143, 0.24) 58%,
-    transparent 100%
-  );
-  filter: blur(34px);
-  animation: modira-ray-2 13s ease-in-out infinite;
-  animation-delay: -5s;
-}
-
-
-/* =========================================================
-   RAYO 3 — DERECHA INTERIOR
-   ========================================================= */
-
-.hero-ray-3 {
-  width: 235px;
-  background: linear-gradient(
-    to bottom,
-    rgba(72, 116, 220, 0.72) 0%,
-    rgba(40, 84, 184, 0.50) 28%,
-    rgba(23, 59, 143, 0.20) 58%,
-    transparent 100%
-  );
-  filter: blur(36px);
-  animation: modira-ray-3 16s ease-in-out infinite;
-  animation-delay: -10s;
-}
-
-
-/* =========================================================
-   RAYO 4 — IZQUIERDA EXTERIOR
-   ========================================================= */
-
-.hero-ray-4 {
-  width: 175px;
-  background: linear-gradient(
-    to bottom,
-    rgba(72, 116, 220, 0.58) 0%,
-    rgba(40, 84, 184, 0.38) 30%,
-    rgba(23, 59, 143, 0.14) 65%,
-    transparent 100%
-  );
-  filter: blur(42px);
-  animation: modira-ray-4 21s ease-in-out infinite;
-  animation-delay: -8s;
-}
-
-
-/* =========================================================
-   RAYO 5 — DERECHA EXTERIOR
-   ========================================================= */
-
-.hero-ray-5 {
-  width: 185px;
-
-  background: linear-gradient(
-    to bottom,
-    rgba(72, 116, 220, 0.60) 0%,
-    rgba(40, 84, 184, 0.38) 30%,
-    rgba(23, 59, 143, 0.14) 62%,
-    transparent 100%
-  );
-
-  filter: blur(34px);
-
-  animation: modira-ray-5 20s ease-in-out infinite;
-
-  animation-delay: -7s;
-}
-
-
-/* =========================================================
-   RAYO 6 — EXTERIOR
-   ========================================================= */
-
-.hero-ray-6 {
-  width: 145px;
-  background: linear-gradient(
-    to bottom,
-    rgba(96, 139, 235, 0.52) 0%,
-    rgba(40, 84, 184, 0.30) 38%,
-    transparent 82%
-  );
-  filter: blur(45px);
-  animation: modira-ray-6 14s ease-in-out infinite;
-  animation-delay: -3s;
-}
-/* =========================================================
-   MOVIMIENTO DINÁMICO — RAYOS DE SOL
-   Movimiento más marcado y orgánico
-   ========================================================= */
-
-@keyframes modira-ray-1 {
-  0%, 100% {
-    transform: translateX(-50%) rotate(-30deg) scaleX(0.95);
-    opacity: 0.56;
-  }
-
-  25% {
-    transform: translateX(-43%) rotate(-26deg) scaleX(1.01);
-    opacity: 0.72;
-  }
-
-  50% {
-    transform: translateX(-30%) rotate(-18deg) scaleX(1.07);
-    opacity: 0.90;
-  }
-
-  75% {
-    transform: translateX(-42%) rotate(-25deg) scaleX(1.01);
-    opacity: 0.68;
-  }
-}
-
-
-@keyframes modira-ray-2 {
-  0%, 100% {
-    transform: translateX(-50%) rotate(-17deg) scaleX(0.95);
-    opacity: 0.58;
-  }
-
-  25% {
-    transform: translateX(-62%) rotate(-10deg) scaleX(1.01);
-    opacity: 0.76;
-  }
-
-  50% {
-    transform: translateX(-76%) rotate(1deg) scaleX(1.08);
-    opacity: 0.96;
-  }
-
-  75% {
-    transform: translateX(-63%) rotate(-9deg) scaleX(1.01);
-    opacity: 0.72;
-  }
-}
-
-
-@keyframes modira-ray-3 {
-  0%, 100% {
-    transform: translateX(-50%) rotate(8deg) scaleX(0.95);
-    opacity: 0.56;
-  }
-
-  25% {
-    transform: translateX(-70%) rotate(15deg) scaleX(1.02);
-    opacity: 0.72;
-  }
-
-  50% {
-    transform: translateX(-98%) rotate(27deg) scaleX(1.08);
-    opacity: 0.94;
-  }
-
-  75% {
-    transform: translateX(-68%) rotate(14deg) scaleX(1.01);
-    opacity: 0.68;
-  }
-}
-
-
-
-@keyframes modira-ray-4 {
-  0%, 100% {
-    transform: translateX(-50%) rotate(-47deg) scaleX(0.92);
-    opacity: 0.36;
-  }
-
-  25% {
-    transform: translateX(-41%) rotate(-42deg) scaleX(1);
-    opacity: 0.52;
-  }
-
-  50% {
-    transform: translateX(-27%) rotate(-33deg) scaleX(1.08);
-    opacity: 0.70;
-  }
-
-  75% {
-    transform: translateX(-40%) rotate(-41deg) scaleX(1);
-    opacity: 0.50;
-  }
-}
-
-
-@keyframes modira-ray-5 {
-
-  0%, 100% {
-    transform:
-      translateX(calc(-50% + 0px))
-      rotate(44deg)
-      scaleX(0.92);
-    opacity: 0.38;
-  }
-
-  25% {
-    transform:
-      translateX(calc(-50% + 35px))
-      rotate(50deg)
-      scaleX(1.01);
-    opacity: 0.52;
-  }
-
-  50% {
-    transform:
-      translateX(calc(-50% + 75px))
-      rotate(61deg)
-      scaleX(1.09);
-    opacity: 0.72;
-  }
-
-  75% {
-    transform:
-      translateX(calc(-50% + 28px))
-      rotate(48deg)
-      scaleX(1.01);
-    opacity: 0.50;
-  }
-
-}
-
-
-@keyframes modira-ray-6 {
-  0%, 100% {
-    transform: translateX(-50%) rotate(-60deg) scaleX(0.90);
-    opacity: 0.25;
-  }
-
-  25% {
-    transform: translateX(-35%) rotate(-53deg) scaleX(1);
-    opacity: 0.36;
-  }
-
-  50% {
-    transform: translateX(-12%) rotate(-40deg) scaleX(1.09);
-    opacity: 0.55;
-  }
-
-  75% {
-    transform: translateX(-34%) rotate(-52deg) scaleX(1);
-    opacity: 0.34;
-  }
-}
-/* =========================================================
-   GLOW CENTRAL — ANCHO Y CONCENTRADO EN EL ORIGEN
-   ========================================================= */
-
-.hero-main-glow {
-  position: absolute;
-  top: -260px;
-  left: 50%;
-  width: 105%;
-  height: 620px;
-  transform: translateX(-50%);
-
-  background:
-    radial-gradient(
-      ellipse 48% 90% at 50% 0%,
-      rgba(96, 139, 235, 0.95) 0%,
-      rgba(72, 116, 220, 0.82) 22%,
-      rgba(40, 84, 184, 0.55) 42%,
-      rgba(23, 59, 143, 0.25) 63%,
-      rgba(16, 42, 102, 0.08) 78%,
-      transparent 100%
-    );
-
-  filter: blur(12px);
-
-  animation: modira-main-glow 18s ease-in-out infinite;
-
-  will-change: transform, opacity;
-}
-
-
-@keyframes modira-main-glow {
-  0%, 100% {
-    opacity: 0.82;
-    transform: translateX(-50%) scale(1);
-  }
-
-  50% {
-    opacity: 1;
-    transform: translateX(-50%) scale(1.04);
-  }
-}
-  /* =========================================================
-     GRID
-     ========================================================= */
-
-  .hero-grid {
-    position: absolute;
-    inset: 0;
-
-    background-image:
-      linear-gradient(
-        rgba(255, 255, 255, 0.10) 1px,
-        transparent 1px
-      ),
-      linear-gradient(
-        90deg,
-        rgba(255, 255, 255, 0.10) 1px,
-        transparent 1px
-      );
-
-    background-size: 42px 42px;
-
-    opacity: 0.65;
-
-    mask-image:
-      linear-gradient(
-        to bottom,
-        black 0%,
-        black 55%,
-        transparent 100%
-      );
-
-    -webkit-mask-image:
-      linear-gradient(
-        to bottom,
-        black 0%,
-        black 55%,
-        transparent 100%
-      );
-  }
-
-
-  /* =========================================================
-     ENTRADA DEL HERO
-     ========================================================= */
-
-  .hero-fade-in {
-    opacity: 0;
-    transform: translateY(18px);
-    animation: modira-hero-fade-in 0.7s ease-out forwards;
-  }
-
-
-  @keyframes modira-hero-fade-in {
-    from {
-      opacity: 0;
-      transform: translateY(18px);
-    }
-
-    to {
-      opacity: 1;
-      transform: translateY(0);
-    }
-  }
-
-
-  /* =========================================================
-     REDUCED MOTION
-     ========================================================= */
-
-  @media (prefers-reduced-motion: reduce) {
-
-    .scroll-reveal-item {
-      opacity: 1 !important;
-      transform: none !important;
-      filter: none !important;
-      transition: none !important;
-    }
-
-    .hero-ray,
-    .hero-main-glow,
-    .hero-fade-in {
-      animation: none !important;
-    }
-
-    .hero-fade-in {
-      opacity: 1 !important;
-      transform: none !important;
-    }
-  }
-`}</style>
-
-     <Header />
-
-{/* =========================================================
-    HERO — MODIRA / LIGHT RAYS
-    ========================================================= */}
-
-<section className="relative min-h-screen h-screen overflow-hidden bg-[#0A1838]">
-
-  {/* =======================================================
-      LIGHT RAYS — fondo compartido con el Header
-      ======================================================= */}
-
-  <div className="pointer-events-none absolute inset-0 overflow-hidden">
-
-    {/* Fondo base */}
-    <div className="absolute inset-0 bg-[#0A1838]" />
-
-    {/* Glow central superior */}
-    <div className="hero-main-glow" />
-
-    {/* Rayos */}
-    <div className="hero-ray hero-ray-1" />
-    <div className="hero-ray hero-ray-2" />
-    <div className="hero-ray hero-ray-3" />
-    <div className="hero-ray hero-ray-4" />
-    <div className="hero-ray hero-ray-5" />
-    <div className="hero-ray hero-ray-6" />
-
-    {/* Grid */}
-    <div className="hero-grid" />
-
-    {/* Oscurecimiento lateral */}
-    <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_center,transparent_20%,rgba(10,24,56,0.35)_70%,rgba(10,24,56,0.75)_100%)]" />
-
-    {/* Fade inferior */}
-    <div className="absolute bottom-0 left-0 right-0 h-[30%] bg-gradient-to-t from-[#0A1838] via-[#0A1838]/70 to-transparent" />
-
-  </div>
-
-
-  {/* =======================================================
-    CONTENIDO
-    ======================================================= */}
-
-<div className="relative z-10 flex h-full items-center justify-center px-5 pb-20 pt-32 sm:px-8 md:px-8 md:pb-24 md:pt-32">
-  <div className="mx-auto flex w-full max-w-[1000px] flex-col items-center text-center">
-
-
-    {/* ===================================================
-        TITULAR
-        =================================================== */}
-
-    <h1
-      className="hero-fade-in max-w-[900px] text-[36px] font-bold leading-[1.08] tracking-[0.015em] text-white sm:text-[40px] md:text-[46px] lg:text-[50px]"
-      style={{ animationDelay: "0.15s" }}
+    <button
+      type="button"
+      onClick={onClick}
+      className="flex w-full items-center gap-2.5 rounded-lg px-3 py-2.5 text-left text-sm text-[#596577] hover:bg-[#F7F8FA] hover:text-[#263044]"
     >
-      Automatiza tu empresa,
-      <br />
-      libera tu equipo
-    </h1>
-
-
-    {/* ===================================================
-        SUBTÍTULO
-        =================================================== */}
-
-    <p
-      className="hero-fade-in mt-6 max-w-[650px] text-[16px] leading-[1.55] text-white/70 sm:text-[17px] md:text-[18px]"
-      style={{ animationDelay: "0.30s" }}
-    >
-      Menos trabajo manual. Más tiempo para hacer crecer tu negocio.
-    </p>
-
-
-    {/* ===================================================
-        FLUJO DE BENEFICIOS
-        =================================================== */}
-
-    <div
-      className="hero-fade-in mt-8 flex flex-wrap items-center justify-center text-[14px] font-medium text-white/80 sm:text-[15px]"
-      style={{ animationDelay: "0.45s" }}
-    >
-
-      {/* Elimina tareas */}
-      <span className="flex items-center gap-2 whitespace-nowrap">
-        <span className="flex h-5 w-5 items-center justify-center rounded-full border border-white/15 bg-white/10 text-[10px] text-white">
-          ✓
-        </span>
-        Elimina tareas
-      </span>
-
-      <span className="mx-3 text-[20px] font-light text-white/25 sm:mx-5">
-        ›
-      </span>
-
-      {/* Conecta herramientas */}
-      <span className="flex items-center gap-2 whitespace-nowrap">
-        <span className="flex h-5 w-5 items-center justify-center rounded-full border border-white/15 bg-white/10 text-[10px] text-white">
-          ✓
-        </span>
-        Conecta herramientas
-      </span>
-
-      <span className="mx-3 text-[20px] font-light text-white/25 sm:mx-5">
-        ›
-      </span>
-
-      {/* Gana tiempo */}
-      <span className="flex items-center gap-2 whitespace-nowrap">
-        <span className="flex h-5 w-5 items-center justify-center rounded-full border border-white/15 bg-white/10 text-[10px] text-white">
-          ✓
-        </span>
-        Gana tiempo
-      </span>
-
-    </div>
-
-
-    {/* ===================================================
-        BOTONES
-        =================================================== */}
-
-    <div
-      className="hero-fade-in mt-10 flex flex-col items-center justify-center gap-3 sm:flex-row sm:gap-4"
-      style={{ animationDelay: "0.60s" }}
-    >
-
-      <Button
-        size="lg"
-        className="h-12 rounded-lg bg-white px-7 text-[15px] font-semibold text-[#102A66] shadow-lg transition-all duration-200 hover:-translate-y-0.5 hover:bg-[#F4F6F9] hover:shadow-xl sm:h-13 sm:px-8"
-        onClick={() =>
-          document
-            .getElementById("auditoria")
-            ?.scrollIntoView({ behavior: "smooth" })
-        }
-      >
-        Solicita tu auditoría gratuita
-        <ArrowRight className="ml-2 h-4 w-4" />
-      </Button>
-
-
-      <Button
-        size="lg"
-        variant="outline"
-        className="h-12 rounded-lg border-white/20 bg-white/[0.02] px-7 text-[15px] font-semibold text-white backdrop-blur-sm transition-all duration-200 hover:-translate-y-0.5 hover:border-white/35 hover:bg-white/10 sm:h-13 sm:px-8"
-        onClick={() =>
-          document
-            .getElementById("casos-exito")
-            ?.scrollIntoView({ behavior: "smooth" })
-        }
-      >
-        Ver casos de éxito
-      </Button>
-
-    </div>
-
-  </div>
-
-</div>
-
-</section>
-    {/* Statistics Section - Premium Cards */}
-<section className="py-10 md:py-14 bg-[#F4F6F9]">
-  <div className="container mx-auto px-6 sm:px-8 lg:px-12 xl:px-16">
-
-    <div className="relative overflow-hidden">
-
-      {/* Carrusel infinito */}
-      <div className="stats-scroll flex w-max gap-6">
-
-        {/* PRIMER GRUPO */}
-        <div className="flex gap-6">
-          {[
-            {
-              label: "Hasta",
-              value: "80%",
-              description: "Reducción de trabajo manual",
-              icon: TrendingUp,
-            },
-            {
-              label: "Potencial",
-              value: "10-30 h",
-              description: "Ahorro semanal por proceso",
-              icon: Clock,
-            },
-            {
-              label: "Experiencia",
-              value: "75+",
-              description: "Procesos automatizados",
-              icon: CheckCircle,
-            },
-            {
-              label: "Disponibilidad",
-              value: "24/7",
-              description: "Automatizaciones funcionando",
-              icon: Zap,
-            },
-          ].map((stat, idx) => (
-            <Card
-              key={`group-1-${idx}`}
-              className="scroll-reveal-item w-[280px] md:w-[270px] lg:w-[280px] xl:w-[290px] shrink-0 p-4 md:p-5 border border-[#E8ECF2] bg-white hover:shadow-lg transition-all duration-300"
-            >
-              <div className="flex items-start justify-between mb-2">
-                <div>
-                  <p className="text-sm font-semibold text-[#52627A] mb-1">
-                    {stat.label}
-                  </p>
-
-                  <p className="text-3xl md:text-4xl font-bold text-[#173B8F] mt-3">
-                    {stat.value}
-                  </p>
-                </div>
-
-                <stat.icon className="h-6 w-6 text-[#173B8F] opacity-60" />
-              </div>
-
-              <p className="text-sm text-[#52627A]">
-                {stat.description}
-              </p>
-            </Card>
-          ))}
-        </div>
-
-        {/* SEGUNDO GRUPO - DUPLICADO PARA EL LOOP INFINITO */}
-        <div className="flex gap-6">
-          {[
-            {
-              label: "Hasta",
-              value: "80%",
-              description: "Reducción de trabajo manual",
-              icon: TrendingUp,
-            },
-            {
-              label: "Potencial",
-              value: "10-30 h",
-              description: "Ahorro semanal por proceso",
-              icon: Clock,
-            },
-            {
-              label: "Experiencia",
-              value: "75+",
-              description: "Procesos automatizados",
-              icon: CheckCircle,
-            },
-            {
-              label: "Disponibilidad",
-              value: "24/7",
-              description: "Automatizaciones funcionando",
-              icon: Zap,
-            },
-          ].map((stat, idx) => (
-            <Card
-              key={`group-2-${idx}`}
-              className="scroll-reveal-item w-[280px] md:w-[270px] lg:w-[280px] xl:w-[290px] shrink-0 p-4 md:p-5 border border-[#E8ECF2] bg-white hover:shadow-lg transition-all duration-300"
-            >
-              <div className="flex items-start justify-between mb-2">
-                <div>
-                  <p className="text-sm font-semibold text-[#52627A] mb-1">
-                    {stat.label}
-                  </p>
-
-                  <p className="text-3xl md:text-4xl font-bold text-[#173B8F] mt-3">
-                    {stat.value}
-                  </p>
-                </div>
-
-                <stat.icon className="h-6 w-6 text-[#173B8F] opacity-60" />
-              </div>
-
-              <p className="text-sm text-[#52627A]">
-                {stat.description}
-              </p>
-            </Card>
-          ))}
-        </div>
-
-      </div>
-
-      {/* Difuminado lateral izquierdo */}
-      <div className="pointer-events-none absolute inset-y-0 left-0 z-10 w-10 md:w-14 bg-gradient-to-r from-[#F4F6F9] to-transparent" />
-
-      {/* Difuminado lateral derecho */}
-      <div className="pointer-events-none absolute inset-y-0 right-0 z-10 w-10 md:w-14 bg-gradient-to-l from-[#F4F6F9] to-transparent" />
-
-    </div>
-
-  </div>
-</section>
-
-      {/* Problema Section - Enhanced */}
-      <section className="relative py-16 md:py-24 bg-white before:absolute before:inset-x-0 before:top-0 before:h-8 before:bg-gradient-to-b before:from-[#F4F6F9] before:to-white">
-        <div className="relative z-10 container mx-auto px-6 sm:px-8 lg:px-12 xl:px-16">
-          <div className="grid md:grid-cols-2 gap-12 items-center">
-            <div className="relative order-2 md:order-1">
-              <img
-                src="/Images/manual-processes.png"
-                alt="Procesos manuales"
-                className="scroll-reveal-item rounded-2xl shadow-lg w-full h-auto"
-              />
-            </div>
-            <div className="space-y-6 order-1 md:order-2">
-              <h2 className="scroll-reveal-item text-3xl md:text-4xl font-bold text-[#102A66] leading-tight">
-                El problema que enfrentas
-              </h2>
-              <p className="scroll-reveal-item text-lg text-[#52627A]">
-                Tu equipo pierde horas valiosas en tareas que podrían automatizarse:
-              </p>
-              <ul className="scroll-reveal-item space-y-4">
-                {[
-                  "Introducir datos manualmente en múltiples herramientas",
-                  "Procesos administrativos repetitivos sin conexión entre sistemas",
-                  "Errores humanos que generan retrasos y costos",
-                  "Respuestas lentas a clientes por falta de automatización",
-                  "Oportunidades comerciales perdidas por falta de tiempo",
-                ].map((item, idx) => (
-                  <li key={idx} className="flex gap-3 items-start">
-                    <div className="flex-shrink-0 mt-1">
-                      <div className="flex items-center justify-center h-6 w-6 rounded-full bg-red-100">
-                        <AlertCircle className="h-4 w-4 text-red-600" />
-                      </div>
-                    </div>
-                    <span className="text-[#182230]">{item}</span>
-                  </li>
-                ))}
-              </ul>
-            </div>
-          </div>
-        </div>
-      </section>
-
-
-      {/* Solución Section - Enhanced */}
-        {/* <section className="pt-16 md:pt-24 pb-4 md:pb-8 bg-[#F4F6F9]"> */}
-       
-
-
-          <section className="relative py-16 md:py-24 bg-[#F4F6F9] before:absolute before:inset-x-0 before:top-0 before:h-8 before:bg-gradient-to-b before:from-white before:to-[#F4F6F9]">
-          <div className="relative z-10 container mx-auto px-6 sm:px-8 lg:px-12 xl:px-16">
-
-          <div className="text-center mb-12">
-            <h2 className="scroll-reveal-item text-3xl md:text-4xl font-bold text-[#102A66] mb-4 leading-tight">
-              La solución: Automatización inteligente
-            </h2>
-            <p className="scroll-reveal-item text-lg text-[#52627A] max-w-2xl mx-auto">
-              Modira diseña flujos personalizados que conectan tus herramientas
-              existentes y automatizan tus procesos sin cambiar tu infraestructura.
-            </p>
-          </div>
-
-          <div className="grid md:grid-cols-3 gap-8 mb-12">
-            {[
-              {
-                icon: Zap,
-                title: "Gana tiempo",
-                description:
-                  "Automatiza tareas repetitivas y libera a tu equipo para trabajo de mayor valor.",
-              },
-              {
-                icon: BarChart3,
-                title: "Mejora la productividad",
-                description:
-                  "Reduce errores, acelera procesos y centraliza la información en tiempo real.",
-              },
-              {
-                icon: Cog,
-                title: "Escala sin costos",
-                description:
-                  "Crece sin aumentar plantilla. Tus sistemas trabajan 24/7 por ti.",
-              },
-            ].map((item, idx) => (
-              <Card
-                key={idx}
-                className="scroll-reveal-item p-8 border border-[#E8ECF2] bg-white hover:border-[#173B8F] hover:shadow-lg transition-all duration-300"
-              >
-                <item.icon className="h-12 w-12 text-[#173B8F] mb-4" />
-                <h3 className="text-xl font-bold text-[#102A66] mb-3">
-                  {item.title}
-                </h3>
-                <p className="text-[#52627A]">{item.description}</p>
-              </Card>
-            ))}
-          </div>
-
-          {/* Integration Ecosystem */}
-</div>
-</section>
-
-      {/* ROI Calculator Section */}
-      <section className="pt-4 md:pt-8 pb-16 md:pb-24 bg-[#F4F6F9]">
-        <div className="container mx-auto px-6 sm:px-8 lg:px-12 xl:px-16">
-          <div className="text-center mb-12">
-            <h2 className="scroll-reveal-item text-3xl md:text-4xl font-bold text-[#102A66] mb-4">
-              ¿Cuánto podrías ahorrar?
-            </h2>
-            <p className="scroll-reveal-item text-lg text-[#52627A]">
-              Calculadora orientativa de ahorro potencial
-            </p>
-          </div>
-
-          <div className="max-w-4xl mx-auto">
-            <Card className="scroll-reveal-item p-8 md:p-12 border border-[#E8ECF2]">
-              <div className="grid md:grid-cols-3 gap-8 mb-8">
-                {/* Employees */}
-                <div>
-                  <label className="block text-sm font-semibold text-[#182230] mb-3">
-                    Número de empleados
-                  </label>
-                  <input
-                    type="range"
-                    min="1"
-                    max="100"
-                    value={savingsData.employees}
-                    onChange={(e) =>
-                      handleSavingsChange("employees", parseInt(e.target.value))
-                    }
-                    className="w-full h-2 bg-[#E8ECF2] rounded-lg appearance-none cursor-pointer accent-[#173B8F]"
-                  />
-                  <p className="text-2xl font-bold text-[#173B8F] mt-2">
-                    {savingsData.employees}
-                  </p>
-                </div>
-
-                {/* Hours per week */}
-                <div>
-                  <label className="block text-sm font-semibold text-[#182230] mb-3">
-                    Horas/semana en tareas repetitivas
-                  </label>
-                  <input
-                    type="range"
-                    min="1"
-                    max="40"
-                    value={savingsData.hoursPerWeek}
-                    onChange={(e) =>
-                      handleSavingsChange("hoursPerWeek", parseInt(e.target.value))
-                    }
-                    className="w-full h-2 bg-[#E8ECF2] rounded-lg appearance-none cursor-pointer accent-[#173B8F]"
-                  />
-                  <p className="text-2xl font-bold text-[#173B8F] mt-2">
-                    {savingsData.hoursPerWeek}h
-                  </p>
-                </div>
-
-                {/* Hourly rate */}
-                <div>
-                  <label className="block text-sm font-semibold text-[#182230] mb-3">
-                    Coste/hora (€)
-                  </label>
-                  <input
-                    type="range"
-                    min="10"
-                    max="100"
-                    step="5"
-                    value={savingsData.hourlyRate}
-                    onChange={(e) =>
-                      handleSavingsChange("hourlyRate", parseInt(e.target.value))
-                    }
-                    className="w-full h-2 bg-[#E8ECF2] rounded-lg appearance-none cursor-pointer accent-[#173B8F]"
-                  />
-                  <p className="text-2xl font-bold text-[#173B8F] mt-2">
-                    €{savingsData.hourlyRate}
-                  </p>
-                </div>
-              </div>
-
-              <div className="border-t border-[#E8ECF2] pt-8">
-                <div className="grid md:grid-cols-4 gap-6">
-                  <div className="text-center">
-                    <p className="text-sm text-[#52627A] mb-2">Ahorro semanal</p>
-                    <p className="text-3xl font-bold text-[#173B8F]">
-                      {weeklySavings}h
-                    </p>
-                  </div>
-                  <div className="text-center">
-                    <p className="text-sm text-[#52627A] mb-2">Ahorro mensual</p>
-                    <p className="text-3xl font-bold text-[#173B8F]">
-                      {monthlySavings}h
-                    </p>
-                  </div>
-                  <div className="text-center">
-                    <p className="text-sm text-[#52627A] mb-2">Ahorro anual</p>
-                    <p className="text-3xl font-bold text-[#173B8F]">
-                      {yearlySavings}h
-                    </p>
-                  </div>
-                  <div className="text-center">
-                    <p className="text-sm text-[#52627A] mb-2">Valor mensual</p>
-                    <p className="text-3xl font-bold text-green-600">
-                      €{monthlyCost.toLocaleString()}
-                    </p>
-                  </div>
-                </div>
-              </div>
-
-              <p className="text-xs text-[#52627A] text-center mt-6">
-                Esta es una estimación orientativa. Los resultados reales pueden variar según tu negocio específico.
-              </p>
-            </Card>
-          </div>
-        </div>
-      </section>
-
-
-      {/* Cómo trabajamos Section */}
-      <div className="-mt-12 md:-mt-16">
-  <HowWeWork />
-</div>
-
-
-      <IntegrationFlow />
-
-
-      {/* Before/After Section */}
-      <section className="py-16 md:py-24 bg-white">
-        <div className="container mx-auto px-6 sm:px-8 lg:px-12 xl:px-16">
-          <div className="text-center mb-12">
-            <h2 className="scroll-reveal-item text-3xl md:text-4xl font-bold text-[#102A66] mb-4">
-              De procesos manuales a sistemas que trabajan por ti
-            </h2>
-            <p className="scroll-reveal-item text-lg text-[#52627A] max-w-2xl mx-auto">
-              Visualiza la transformación que Modira proporciona a tu empresa
-            </p>
-          </div>
-
-          <div className="grid md:grid-cols-2 gap-8">
-            {/* Before */}
-            <Card className="scroll-reveal-item p-8 border-2 border-red-200 bg-red-50">
-              <h3 className="text-2xl font-bold text-red-700 mb-6 flex items-center gap-2">
-                <AlertCircle className="h-6 w-6" />
-                Antes
-              </h3>
-              <ul className="space-y-3">
-                {[
-                  "Introducir datos manualmente",
-                  "Copiar información entre herramientas",
-                  "Enviar emails manualmente",
-                  "Revisar tareas repetitivas",
-                  "Errores humanos frecuentes",
-                ].map((item, idx) => (
-                  <li key={idx} className="flex gap-3 items-start">
-                    <span className="text-red-600 font-bold">✕</span>
-                    <span className="text-red-900">{item}</span>
-                  </li>
-                ))}
-              </ul>
-            </Card>
-
-            {/* After */}
-            <Card className="scroll-reveal-item p-8 border-2 border-green-200 bg-green-50">
-              <h3 className="text-2xl font-bold text-green-700 mb-6 flex items-center gap-2">
-                <CheckCircle2 className="h-6 w-6" />
-                Después
-              </h3>
-              <ul className="space-y-3">
-                {[
-                  "Datos sincronizados automáticamente",
-                  "Herramientas conectadas",
-                  "Respuestas automáticas",
-                  "Flujos funcionando 24/7",
-                  "Menos errores",
-                ].map((item, idx) => (
-                  <li key={idx} className="flex gap-3 items-start">
-                    <span className="text-green-600 font-bold">✓</span>
-                    <span className="text-green-900">{item}</span>
-                  </li>
-                ))}
-              </ul>
-            </Card>
-          </div>
-        </div>
-      </section>
-
-
-      {/* Casos de Éxito Section */}
-      {/* <section id="casos-exito" className="py-16 md:py-24 bg-white"> */}
-        <section
-  id="casos-exito"
-  className="relative py-16 md:py-24 bg-[#F4F6F9] before:absolute before:inset-x-0 before:top-0 before:h-8 before:bg-gradient-to-b before:from-white before:to-[#F4F6F9]"
->
-        {/* <div className="container mx-auto px-6 sm:px-8 lg:px-12 xl:px-16"> */}
-          <div className="relative z-10 container mx-auto px-6 sm:px-8 lg:px-12 xl:px-16">
-        <h2 className="scroll-reveal-item text-3xl md:text-4xl font-bold text-[#102A66] mb-4 text-center">
-              Ejemplos de transformación
-          </h2>
-          <p className="scroll-reveal-item text-lg text-[#52627A] max-w-2xl mx-auto text-center mb-12">
-            Casos de uso reales que muestran el potencial de la automatización
-          </p>
-
-          <div className="grid md:grid-cols-3 gap-8">
-            {[
-              {
-                name: "Automatización comercial",
-                role: "Ejemplo: Empresa de servicios",
-                quote:
-                  "Captación → CRM → seguimiento → email. Un flujo completo que convierte leads en clientes sin intervención manual.",
-                metrics: "25h/semana ahorradas",
-              },
-              {
-                name: "Automatización administrativa",
-                role: "Ejemplo: Consultoría",
-                quote:
-                  "Formulario → datos → documento → notificación. Los procesos administrativos se resuelven automáticamente.",
-                metrics: "95% menos errores",
-              },
-              {
-                name: "Atención al cliente",
-                role: "Ejemplo: E-commerce",
-                quote:
-                  "Cliente → WhatsApp → IA → respuesta. Respuestas automáticas inteligentes 24/7.",
-                metrics: "0 contrataciones",
-              },
-            ].map((example, idx) => (
-              <Card key={idx} className="scroll-reveal-item p-8 border-[#E8ECF2] hover:shadow-lg transition-all">
-                <div className="flex gap-1 mb-4">
-                  {[...Array(5)].map((_, i) => (
-                    <Star
-                      key={i}
-                      className="h-5 w-5 fill-yellow-400 text-yellow-400"
-                    />
-                  ))}
-                </div>
-                <p className="text-[#182230] mb-6 italic">\"{example.quote}\"</p>
-                <div className="border-t border-[#E8ECF2] pt-4">
-                  <p className="font-bold text-[#102A66]">{example.name}</p>
-                  <p className="text-sm text-[#52627A]">{example.role}</p>
-                  <p className="text-sm font-semibold text-[#173B8F] mt-2">
-                    {example.metrics}
-                  </p>
-                </div>
-              </Card>
-            ))}
-          </div>
-        </div>
-      </section>
-
-
-
-      {/* Los planes de mantenimiento se muestran en /servicios. */}
-
-
- {/* Por qué elegir Modira Section */}
-      {/* <section className="py-16 md:py-24 bg-white"> */}
-      <section className="relative py-16 md:py-24 bg-white before:absolute before:inset-x-0 before:top-0 before:h-8 before:bg-gradient-to-b before:from-[#F4F6F9] before:to-white">
-        {/* <div className="container mx-auto px-6 sm:px-8 lg:px-12 xl:px-16"> */}
-        <div className="relative z-10 container mx-auto px-6 sm:px-8 lg:px-12 xl:px-16">
-          <h2 className="scroll-reveal-item text-3xl md:text-4xl font-bold text-[#102A66] mb-12 text-center">
-            Por qué elegir Modira
-          </h2>
-
-          <div className="grid md:grid-cols-2 gap-12 items-center">
-            <div className="space-y-6">
-              {[
-                {
-                  title: "100% personalizadas",
-                  description: "Cada solución se adapta a tu negocio específico, no usamos templates genéricos.",
-                },
-                {
-                  title: "Soporte cercano",
-                  description: "Equipo dedicado que entiende tu negocio y está disponible cuando lo necesitas.",
-                },
-                {
-                  title: "Formación incluida",
-                  description: "Tu equipo aprende a mantener y mejorar los sistemas sin depender de nosotros.",
-                },
-                {
-                  title: "Orientados a resultados",
-                  description: "No vendemos horas, vendemos resultados medibles y mejoras en tu negocio.",
-                },
-              ].map((item, idx) => (
-                <div key={idx} className="scroll-reveal-item flex gap-4">
-                  <div className="flex-shrink-0">
-                    <div className="flex items-center justify-center h-12 w-12 rounded-lg bg-[#173B8F]/10">
-                      <CheckCircle2 className="h-6 w-6 text-[#173B8F]" />
-                    </div>
-                  </div>
-                  <div>
-                    <h3 className="text-lg font-bold text-[#102A66] mb-2">
-                      {item.title}
-                    </h3>
-                    <p className="text-[#52627A]">{item.description}</p>
-                  </div>
-                </div>
-              ))}
-            </div>
-            <div className="relative">
-              <img
-                src="/Images/team-collaboration_a30b2170.png"
-                alt="Colaboración del equipo"
-                className="scroll-reveal-item rounded-2xl shadow-lg w-full h-auto"
-              />
-            </div>
-          </div>
-        </div>
-      </section>
-
-
-
-
-      {/* FAQ Section */}
-      {/* <section id="faq" className="py-16 md:py-24 bg-[#F4F6F9]"> */}
-      <section
-  id="faq"
-  className="relative py-16 md:py-24 bg-[#F4F6F9] before:absolute before:inset-x-0 before:top-0 before:h-8 before:bg-gradient-to-b before:from-white before:to-[#F4F6F9]"
->
-        {/* <div className="container mx-auto px-6 sm:px-8 lg:px-12 xl:px-16"> */}
-        <div className="relative z-10 container mx-auto px-6 sm:px-8 lg:px-12 xl:px-16">
-          <h2 className="scroll-reveal-item text-3xl md:text-4xl font-bold text-[#102A66] mb-12 text-center">
-            Preguntas frecuentes
-          </h2>
-
-          <div className="max-w-3xl mx-auto">
-            <Accordion type="single" collapsible className="space-y-4">
-              {[
-                {
-                  q: "¿Necesito cambiar mis herramientas?",
-                  a: "No. Modira se integra con las herramientas que ya usas. Conectamos Make, n8n, Google Workspace, Airtable y muchas más.",
-                },
-                {
-                  q: "¿Funciona con mi tipo de empresa?",
-                  a: "Sí. Trabajamos con pymes de todos los sectores: servicios, e-commerce, consultoría, manufactura, etc.",
-                },
-                {
-                  q: "¿Cuánto tarda la implantación?",
-                  a: "Depende de la complejidad. Un proceso simple toma 2-3 semanas. Sistemas avanzados pueden tomar 4-8 semanas.",
-                },
-                {
-                  q: "¿Es seguro?",
-                  a: "Sí. Usamos encriptación de extremo a extremo y cumplimos con RGPD. Tus datos están protegidos.",
-                },
-                {
-                  q: "¿Qué pasa si falla una automatización?",
-                  a: "Nuestro equipo monitorea tus sistemas 24/7. Cualquier problema se resuelve inmediatamente.",
-                },
-                {
-                  q: "¿Necesito conocimientos técnicos?",
-                  a: "No. Incluimos formación para tu equipo. Cualquiera puede mantener los sistemas.",
-                },
-                {
-                  q: "¿Puedo modificar la automatización después?",
-                  a: "Claro. Con nuestros planes de mantenimiento, hacemos ajustes y mejoras continuas.",
-                },
-                {
-                  q: "¿Qué ahorro puedo esperar?",
-                  a: "Típicamente, entre 10 y 30 horas semanales por proceso automatizado, más reducción de errores.",
-                },
-              ].map((item, idx) => (
-                <AccordionItem
-                  key={idx}
-                  value={`item-${idx}`}
-                  className="scroll-reveal-item border border-[#E8ECF2] rounded-lg px-6 py-4 bg-white"
-                >
-                  <AccordionTrigger className="text-lg font-semibold text-[#102A66] hover:text-[#173B8F]">
-                    {item.q}
-                  </AccordionTrigger>
-                  <AccordionContent className="text-[#52627A] pt-4">
-                    {item.a}
-                  </AccordionContent>
-                </AccordionItem>
-              ))}
-            </Accordion>
-          </div>
-        </div>
-      </section>
-
-
-      {/* Auditoría CTA Section */}
-      <section id="auditoria" className="py-16 md:py-24 bg-gradient-to-br from-[#102A66] to-[#173B8F]">
-        <div className="container mx-auto px-6 sm:px-8 lg:px-12 xl:px-16">
-          <div className="max-w-2xl mx-auto">
-            <h2 className="scroll-reveal-item text-4xl md:text-5xl font-bold text-white mb-6 text-center">
-              Auditoría gratuita de automatización
-            </h2>
-            <p className="scroll-reveal-item text-lg text-white/90 mb-12 text-center">
-              Completa este formulario y nuestro equipo analizará tu empresa para
-              detectar oportunidades de automatización. Sin compromiso.
-            </p>
-
-            <form onSubmit={handleFormSubmit} className="scroll-reveal-item space-y-6 bg-white p-8 rounded-2xl shadow-xl">
-              <div className="grid md:grid-cols-2 gap-6">
-                <div>
-                  <label className="block text-sm font-semibold text-[#182230] mb-2">
-                    Nombre completo
-                  </label>
-                  <input
-                    type="text"
-                    name="nombre"
-                    value={formData.nombre}
-                    onChange={handleFormChange}
-                    required
-                    className="w-full px-4 py-3 border border-[#E8ECF2] rounded-lg focus:outline-none focus:ring-2 focus:ring-[#173B8F] bg-white"
-                    placeholder="Tu nombre"
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-semibold text-[#182230] mb-2">
-                    Correo electrónico
-                  </label>
-                  <input
-                    type="email"
-                    name="email"
-                    value={formData.email}
-                    onChange={handleFormChange}
-                    required
-                    className="w-full px-4 py-3 border border-[#E8ECF2] rounded-lg focus:outline-none focus:ring-2 focus:ring-[#173B8F] bg-white"
-                    placeholder="tu@email.com"
-                  />
-                </div>
-              </div>
-
-              <div className="grid md:grid-cols-2 gap-6">
-                <div>
-                  <label className="block text-sm font-semibold text-[#182230] mb-2">
-                    Empresa
-                  </label>
-                  <input
-                    type="text"
-                    name="empresa"
-                    value={formData.empresa}
-                    onChange={handleFormChange}
-                    required
-                    className="w-full px-4 py-3 border border-[#E8ECF2] rounded-lg focus:outline-none focus:ring-2 focus:ring-[#173B8F] bg-white"
-                    placeholder="Nombre de tu empresa"
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-semibold text-[#182230] mb-2">
-                    Número de empleados
-                  </label>
-                  <select
-                    name="empleados"
-                    value={formData.empleados}
-                    onChange={handleFormChange as any}
-                    required
-                    className="w-full px-4 py-3 border border-[#E8ECF2] rounded-lg focus:outline-none focus:ring-2 focus:ring-[#173B8F] bg-white"
-                  >
-                    <option value="">Selecciona un rango</option>
-                    <option value="1-10">1-10</option>
-                    <option value="10-25">10-25</option>
-                    <option value="25-50">25-50</option>
-                    <option value="50-100">50-100</option>
-                    <option value="100+">100+</option>
-                  </select>
-                </div>
-              </div>
-
-              <div>
-  <label className="block text-sm font-semibold text-[#182230] mb-2">
-    ¿Qué proceso te gustaría automatizar?
-  </label>
-
-  <textarea
-    name="proceso"
-    value={formData.proceso}
-    onChange={handleFormChange}
-    required
-    rows={4}
-    maxLength={4000}
-    className="w-full px-4 py-3 border border-[#E8ECF2] rounded-lg focus:outline-none focus:ring-2 focus:ring-[#173B8F] bg-white"
-    placeholder="Describe brevemente los procesos que consumen más tiempo en tu empresa..."
-  />
-
-  <div className="mt-1 text-right text-xs text-gray-500">
-    {4000 - formData.proceso.length} caracteres restantes
-  </div>
-</div>
-
-                            <div className="space-y-4 pt-2">
-  <label className="flex items-start gap-3 cursor-pointer">
-    
-    <input
-      type="checkbox"
-      checked={privacyAcknowledged}
-      onChange={(e) =>
-        setPrivacyAcknowledged(e.target.checked)
-      }
-      required
-      className="mt-1 h-4 w-4 shrink-0 rounded border-[#E8ECF2] text-[#173B8F] focus:ring-[#173B8F]"
-    />
-    <span className="text-sm text-[#52627A] leading-5">
-  He leído la{" "}
-  <a
-    href="/politica-privacidad"
-    onClick={() => {
-      sessionStorage.setItem(
-        "modira_previous_page",
-        JSON.stringify({
-          url: window.location.href,
-          scrollY: window.scrollY,
-        })
-      );
-    }}
-    className="font-semibold text-[#1E3A8A] hover:underline"
-  >
-    Información de Privacidad
-  </a>{" "}
-  y he sido informado/a sobre el tratamiento de mis datos personales.
-</span>
-  </label>
-
-  <label className="flex items-start gap-3 cursor-pointer">
-    <input
-      type="checkbox"
-      checked={auditTermsAccepted}
-      onChange={(e) =>
-        setAuditTermsAccepted(e.target.checked)
-      }
-      required
-      className="mt-1 h-4 w-4 shrink-0 rounded border-[#E8ECF2] text-[#173B8F] focus:ring-[#173B8F]"
-    />
-    <span className="text-sm text-[#52627A] leading-5">
-  He leído y acepto las{" "}
-  <a
-    href="/condiciones-auditoria-gratuita"
-    onClick={() => {
-      sessionStorage.setItem(
-        "modira_previous_page",
-        JSON.stringify({
-          url: window.location.href,
-          scrollY: window.scrollY,
-        })
-      );
-    }}
-    className="font-semibold text-[#1E3A8A] hover:underline"
-  >
-    Condiciones de la Auditoría Gratuita
-  </a>
-  .
-</span>
-  </label>
-
-  <p className="text-xs text-[#8B1E3F] ml-7">
-  Ambos campos son obligatorios.
-</p>
-</div>
-              <Button
-                type="submit"
-                disabled={!privacyAcknowledged || !auditTermsAccepted}
-                className="w-full bg-[#173B8F] hover:bg-[#102A66] text-white text-lg py-6 font-semibold disabled:opacity-50 disabled:cursor-not-allowed"
-              >
-                Solicitar auditoría gratuita
-              </Button>
-
-              <p className="text-sm text-[#52627A] text-center">
-                Nos pondremos en contacto en 24 horas. Sin spam, sin compromiso.
-              </p>
-            </form>
-          </div>
-        </div>
-      </section>
-
-      
-
-
-    {/* Footer */}
-<footer className="relative overflow-hidden bg-[#102A66] text-white py-12">
-
-  {/* ============================================================
-      PARTÍCULAS FLOTANTES
-      ============================================================ */}
-  <div
-    className="absolute inset-0 pointer-events-none overflow-hidden"
-    aria-hidden="true"
-  >
-    {Array.from({ length: 32 }).map((_, i) => (
-      <span
-        key={i}
-        className={`footer-particle footer-particle-${i % 4}`}
-        style={{
-          left: `${(i * 37 + 7) % 100}%`,
-          top: `${(i * 61 + 13) % 100}%`,
-          width: `${2 + (i % 4)}px`,
-          height: `${2 + (i % 4)}px`,
-          animationDuration: `${16 + (i % 7) * 2.5}s`,
-          animationDelay: `-${(i % 9) * 2.2}s`,
-          opacity: `${0.20 + (i % 5) * 0.055}`,
-        }}
-      />
-    ))}
-  </div>
-
-  {/* Contenido del footer */}
-  <div className="relative z-10 container-lg mx-auto px-6 sm:px-8 lg:px-12 xl:px-16">
-    <div className="grid md:grid-cols-4 gap-8 mb-8">
-
-      <div>
-        <div className="flex items-center gap-3 mb-4">
-
-  {import.meta.env.VITE_APP_LOGO &&
-  !import.meta.env.VITE_APP_LOGO.startsWith("%") ? (
-    <img
-  src={import.meta.env.VITE_APP_LOGO}
-  alt="Logo de Modira"
-  className="
-    h-8
-    w-auto
-    object-contain
-    animate-[spin_4s_linear_infinite]
-  "
-/>
-  ) : (
-    <div className="p-1.5 rounded-lg bg-white/10">
-      <Zap className="h-5 w-5 text-white" />
-    </div>
-  )}
-
-  <span
-    className="
-      modira-font
-      text-lg
-      leading-none
-      flex
-      items-center
-      translate-y-[2px]
-    "
-  >
-    MODIRA
-  </span>
-
-</div>
-
-        <p className="text-white/70 text-sm mb-5">
-          Automatización inteligente para empresas.
-        </p>
-
-        {/* Redes sociales */}
-        <div className="flex items-center gap-3">
-
-          {/* Instagram */}
-          <a
-            href="https://www.instagram.com/modira.es/"
-            target="_blank"
-            rel="noopener noreferrer"
-            aria-label="Instagram de Modira"
-            className="w-9 h-9 rounded-lg bg-white/10 flex items-center justify-center text-white/70 hover:text-white hover:bg-white/20 transition"
-          >
-            <Instagram className="h-5 w-5" />
-          </a>
-
-          {/* LinkedIn */}
-          <a
-            href="https://www.linkedin.com/company/modira/"
-            target="_blank"
-            rel="noopener noreferrer"
-            aria-label="LinkedIn de Modira"
-            className="w-9 h-9 rounded-lg bg-white/10 flex items-center justify-center text-white/70 hover:text-white hover:bg-white/20 transition"
-          >
-            <Linkedin className="h-5 w-5" />
-          </a>
-
-          {/* WhatsApp */}
-          <button
-            type="button"
-            aria-label="WhatsApp de Modira"
-            className="w-9 h-9 rounded-lg bg-white/10 flex items-center justify-center text-white/70 hover:text-white hover:bg-white/20 transition"
-          >
-            <MessageCircle className="h-5 w-5" />
-          </button>
-
-        </div>
-      </div>
-
-      <div>
-        <h4 className="font-bold mb-4">Producto</h4>
-
-        <ul className="space-y-2 text-white/70 text-sm">
-          <li>
-            <a
-              href="/servicios"
-              className="hover:text-white transition"
-            >
-              Servicios
-            </a>
-          </li>
-<li>
-            <a
-              href="/como-trabajamos"
-              className="hover:text-white transition"
-            >
-              Cómo trabajamos
-            </a>
-          </li>
-          <li>
-            <a
-              href="#faq"
-              className="hover:text-white transition"
-            >
-              FAQ
-            </a>
-          </li>
-        </ul>
-      </div>
-
-      <div>
-        <h4 className="font-bold mb-4">Empresa</h4>
-
-        <ul className="space-y-2 text-white/70 text-sm">
-<li>
-            <a
-              href="/quienes-somos"
-              className="hover:text-white transition"
-            >
-              Quiénes somos
-            </a>
-          </li>
-          <li>
-            <a
-              href="/area-cliente"
-              className="hover:text-white transition"
-            >
-              Área de Clientes
-            </a>
-          </li>
-
-          <li>
-            <a
-              href="/guia-usuario"
-              className="hover:text-white transition"
-            >
-              Guía de Usuario
-            </a>
-          </li>
-
-          <li>
-            <a
-              href="mailto:info@modira.es?subject=Consulta%20sobre%20Modira"
-              className="hover:text-white transition"
-            >
-              Contacto
-            </a>
-          </li>
-
-        </ul>
-      </div>
-
-      <div>
-        <h4 className="font-bold mb-4">Legal</h4>
-
-        <ul className="space-y-2 text-white/70 text-sm">
-
-          <li>
-            <a
-              href="/aviso-legal"
-              onClick={() => {
-                sessionStorage.setItem(
-                  "modira_previous_page",
-                  JSON.stringify({
-                    url: window.location.href,
-                    scrollY: window.scrollY,
-                  })
-                );
-              }}
-              className="hover:text-white transition"
-            >
-              Aviso Legal
-            </a>
-          </li>
-
-          <li>
-            <a
-              href="/politica-privacidad"
-              onClick={() => {
-                sessionStorage.setItem(
-                  "modira_previous_page",
-                  JSON.stringify({
-                    url: window.location.href,
-                    scrollY: window.scrollY,
-                  })
-                );
-              }}
-              className="hover:text-white transition"
-            >
-              Política de Privacidad
-            </a>
-          </li>
-
-          <li>
-            <a
-              href="/terminos"
-              onClick={() => {
-                sessionStorage.setItem(
-                  "modira_previous_page",
-                  JSON.stringify({
-                    url: window.location.href,
-                    scrollY: window.scrollY,
-                  })
-                );
-              }}
-              className="hover:text-white transition"
-            >
-              Términos y Condiciones
-            </a>
-          </li>
-
-          <li>
-            <a
-              href="/politica-cookies"
-              onClick={() => {
-                sessionStorage.setItem(
-                  "modira_previous_page",
-                  JSON.stringify({
-                    url: window.location.href,
-                    scrollY: window.scrollY,
-                  })
-                );
-              }}
-              className="hover:text-white transition"
-            >
-              Política de Cookies
-            </a>
-          </li>
-<li>
-            <a
-              href="/condiciones-auditoria-gratuita"
-              onClick={() => {
-                sessionStorage.setItem(
-                  "modira_previous_page",
-                  JSON.stringify({
-                    url: window.location.href,
-                    scrollY: window.scrollY,
-                  })
-                );
-              }}
-              className="hover:text-white transition"
-            >
-              Condiciones de auditoría gratuita
-            </a>
-          </li>
-        </ul>
-      </div>
-
-    </div>
-
-    <div className="border-t border-white/10 pt-8">
-
-      <div className="grid md:grid-cols-2 gap-8 mb-4">
-
-        <div className="text-white/70 text-xs">
-          <p>
-            <strong>Modira</strong>
-          </p>
-
-          <p>
-            Servicios de automatización empresarial
-          </p>
-
-          <p className="mt-2">
-            Email: info@modira.es
-          </p>
-        </div>
-
-        <div className="text-white/70 text-xs text-right md:text-left">
-
-          <p>
-            © {new Date().getFullYear()} Modira. Todos los derechos reservados.
-          </p>
-
-          <p className="mt-2">
-            Cumplimos con RGPD, LOPDGDD y LSSI-CE
-          </p>
-
-        </div>
-
-      </div>
-
-    </div>
-
-  </div>
-
-  {/* ============================================================
-      ANIMACIÓN DE PARTÍCULAS
-      ============================================================ */}
-  <style>{`
-
-    .footer-particle {
-      position: absolute;
-      display: block;
-      border-radius: 9999px;
-
-      /*
-       * Azul muy claro, pero NO blanco.
-       * Sobre #102A66 queda bastante sutil.
-       */
-      background: rgba(191, 219, 254, 0.65);
-
-      /*
-       * Un pequeño brillo para que se perciban
-       * sin resultar demasiado luminosas.
-       */
-      box-shadow:
-        0 0 6px rgba(191, 219, 254, 0.22);
-
-      will-change: transform, opacity;
-    }
-
-    /* Trayectoria 1 */
-    .footer-particle-0 {
-      animation-name: footerParticleOne;
-      animation-timing-function: ease-in-out;
-      animation-iteration-count: infinite;
-      animation-direction: alternate;
-    }
-
-    /* Trayectoria 2 */
-    .footer-particle-1 {
-      animation-name: footerParticleTwo;
-      animation-timing-function: ease-in-out;
-      animation-iteration-count: infinite;
-      animation-direction: alternate;
-    }
-
-    /* Trayectoria 3 */
-    .footer-particle-2 {
-      animation-name: footerParticleThree;
-      animation-timing-function: ease-in-out;
-      animation-iteration-count: infinite;
-      animation-direction: alternate;
-    }
-
-    /* Trayectoria 4 */
-    .footer-particle-3 {
-      animation-name: footerParticleFour;
-      animation-timing-function: ease-in-out;
-      animation-iteration-count: infinite;
-      animation-direction: alternate;
-    }
-
-    @keyframes footerParticleOne {
-      0% {
-        transform: translate3d(0, 0, 0);
-      }
-
-      25% {
-        transform: translate3d(35px, -45px, 0);
-      }
-
-      50% {
-        transform: translate3d(-25px, -85px, 0);
-      }
-
-      75% {
-        transform: translate3d(55px, -35px, 0);
-      }
-
-      100% {
-        transform: translate3d(-40px, 25px, 0);
-      }
-    }
-
-    @keyframes footerParticleTwo {
-      0% {
-        transform: translate3d(0, 0, 0);
-      }
-
-      25% {
-        transform: translate3d(-45px, 35px, 0);
-      }
-
-      50% {
-        transform: translate3d(30px, -55px, 0);
-      }
-
-      75% {
-        transform: translate3d(-60px, -20px, 0);
-      }
-
-      100% {
-        transform: translate3d(35px, 55px, 0);
-      }
-    }
-
-    @keyframes footerParticleThree {
-      0% {
-        transform: translate3d(0, 0, 0);
-      }
-
-      25% {
-        transform: translate3d(55px, 40px, 0);
-      }
-
-      50% {
-        transform: translate3d(15px, -70px, 0);
-      }
-
-      75% {
-        transform: translate3d(-50px, -30px, 0);
-      }
-
-      100% {
-        transform: translate3d(-25px, 65px, 0);
-      }
-    }
-
-    @keyframes footerParticleFour {
-      0% {
-        transform: translate3d(0, 0, 0);
-      }
-
-      25% {
-        transform: translate3d(-30px, -60px, 0);
-      }
-
-      50% {
-        transform: translate3d(60px, -20px, 0);
-      }
-
-      75% {
-        transform: translate3d(-45px, 50px, 0);
-      }
-
-      100% {
-        transform: translate3d(25px, -40px, 0);
-      }
-    }
-
-    @media (prefers-reduced-motion: reduce) {
-      .footer-particle {
-        animation: none !important;
-      }
-    }
-
-  `}</style>
-
-</footer>
-{/* Chatbot flotante */}
-<AIChatBot />
-    </div>
+      <Icon className="h-4 w-4 text-[#788394]" strokeWidth={1.7} />
+      <span>{label}</span>
+    </button>
   );
 }

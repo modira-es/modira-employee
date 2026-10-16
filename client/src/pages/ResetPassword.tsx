@@ -1,10 +1,22 @@
+import {
+  useEffect,
+  useState,
+} from "react";
+import { useLocation } from "wouter";
+
+import {
+  AlertCircle,
+  CheckCircle,
+  Eye,
+  EyeOff,
+} from "lucide-react";
+
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
-import { useLocation } from "wouter";
-import { AlertCircle, CheckCircle, Eye, EyeOff } from "lucide-react";
+
 import { PasswordStrengthIndicator } from "@/components/PasswordStrengthIndicator";
-import { useState, useEffect } from "react";
+
 import { useAuth } from "@/contexts/AuthContext";
 
 export default function ResetPassword() {
@@ -17,150 +29,266 @@ export default function ResetPassword() {
     loading: authLoading,
   } = useAuth();
 
-  const [showPassword, setShowPassword] = useState(false);
-  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [success, setSuccess] = useState<string | null>(null);
-  const [loading, setLoading] = useState(false);
-  const [validToken, setValidToken] = useState(false);
-  const [checkingToken, setCheckingToken] = useState(true);
+  const [showPassword, setShowPassword] =
+    useState(false);
+
+  const [
+    showConfirmPassword,
+    setShowConfirmPassword,
+  ] = useState(false);
+
+  const [error, setError] =
+    useState<string | null>(null);
+
+  const [success, setSuccess] =
+    useState<string | null>(null);
+
+  const [loading, setLoading] =
+    useState(false);
+
+  const [validToken, setValidToken] =
+    useState(false);
+
+  const [checkingToken, setCheckingToken] =
+    useState(true);
 
   const [form, setForm] = useState({
     password: "",
     confirmPassword: "",
   });
 
-  // Check if user has a valid recovery session
+  /**
+   * ============================================================
+   * COMPROBAR SESIÓN DE RECUPERACIÓN
+   * ============================================================
+   */
   useEffect(() => {
-    const checkRecoverySession = () => {
-      try {
-        // Supabase puede devolver los errores del enlace
-        // directamente en el hash de la URL.
-        const hashParams = new URLSearchParams(
-          window.location.hash.replace(/^#/, "")
-        );
+    const checkRecoverySession =
+      async () => {
+        try {
+          /*
+           * Supabase puede devolver errores del enlace
+           * directamente en el hash.
+           */
+          const hashParams =
+            new URLSearchParams(
+              window.location.hash.replace(
+                /^#/,
+                ""
+              )
+            );
 
-        const errorCode = hashParams.get("error_code");
-        const error = hashParams.get("error");
+          const errorCode =
+            hashParams.get(
+              "error_code"
+            );
 
-        // Si el enlace ha expirado o ha sido rechazado,
-        // NO debemos permitir el cambio de contraseña.
-        if (
-          error === "access_denied" ||
-          errorCode === "otp_expired"
-        ) {
-          setValidToken(false);
-          setError(
-            "El enlace de recuperación es inválido o ha expirado. Por favor solicita uno nuevo."
-          );
+          const hashError =
+            hashParams.get("error");
+
+          /*
+           * Enlace inválido o expirado.
+           */
+          if (
+            hashError ===
+              "access_denied" ||
+            errorCode === "otp_expired"
+          ) {
+            setValidToken(false);
+
+            setError(
+              "El enlace de recuperación es inválido o ha expirado. Por favor solicita uno nuevo."
+            );
+
+            setCheckingToken(false);
+            return;
+          }
+
+          /*
+           * Una sesión normal NO permite acceder
+           * a esta pantalla.
+           *
+           * Debe existir una sesión creada mediante
+           * el flujo PASSWORD_RECOVERY.
+           */
+          if (!isRecoverySession) {
+            setValidToken(false);
+
+            setError(
+              "El enlace de recuperación es inválido o ha expirado. Por favor solicita uno nuevo."
+            );
+
+            setCheckingToken(false);
+            return;
+          }
+
+          /*
+           * Sesión de recuperación válida.
+           */
+          setValidToken(true);
+          setError(null);
           setCheckingToken(false);
-          return;
-        }
-
-        // Una sesión normal NO es suficiente.
-        // Solo aceptamos una sesión creada mediante
-        // el flujo de recuperación de contraseña.
-        if (!isRecoverySession) {
-          setValidToken(false);
-          setError(
-            "El enlace de recuperación es inválido o ha expirado. Por favor solicita uno nuevo."
+        } catch (error) {
+          console.error(
+            "[ResetPassword] Error checking recovery session:",
+            error
           );
+
+          setValidToken(false);
+
+          setError(
+            "Error al verificar el enlace de recuperación."
+          );
+
           setCheckingToken(false);
-          return;
         }
+      };
 
-        // La sesión de recuperación es válida.
-        setValidToken(true);
-        setError(null);
-        setCheckingToken(false);
-      } catch (err) {
-        console.error("[Auth] Error checking recovery session:", err);
-        setValidToken(false);
-        setError("Error al verificar el enlace de recuperación.");
-        setCheckingToken(false);
-      }
-    };
+    /*
+     * Esperamos a que AuthContext termine de
+     * inicializar Supabase.
+     */
+    if (!authLoading) {
+      checkRecoverySession();
+    }
+  }, [
+    isRecoverySession,
+    authLoading,
+  ]);
 
-    checkRecoverySession();
-  }, [isRecoverySession]);
-
-  const handleResetPassword = async (e: React.FormEvent) => {
+  /**
+   * ============================================================
+   * ACTUALIZAR CONTRASEÑA
+   * ============================================================
+   */
+  const handleResetPassword = async (
+    e: React.FormEvent
+  ) => {
     e.preventDefault();
+
     setError(null);
     setSuccess(null);
 
-    const password = form.password;
+    const password =
+      form.password;
 
-    // ============================================================
-    // PASSWORD VALIDATION
-    // Debe coincidir con los requisitos configurados en Supabase.
-    // ============================================================
+    /*
+     * ----------------------------------------------------------
+     * VALIDACIÓN DE CONTRASEÑA
+     * ----------------------------------------------------------
+     */
 
     if (password.length < 10) {
-      setError("La contraseña debe tener al menos 10 caracteres");
+      setError(
+        "La contraseña debe tener al menos 10 caracteres."
+      );
       return;
     }
 
     if (!/[A-Z]/.test(password)) {
-      setError("La contraseña debe contener al menos una mayúscula");
+      setError(
+        "La contraseña debe contener al menos una mayúscula."
+      );
       return;
     }
 
     if (!/[a-z]/.test(password)) {
-      setError("La contraseña debe contener al menos una minúscula");
+      setError(
+        "La contraseña debe contener al menos una minúscula."
+      );
       return;
     }
 
     if (!/[0-9]/.test(password)) {
-      setError("La contraseña debe contener al menos un número");
+      setError(
+        "La contraseña debe contener al menos un número."
+      );
       return;
     }
 
-    // Se considera carácter especial cualquier carácter
-    // que no sea una letra o un número.
     if (!/[^A-Za-z0-9]/.test(password)) {
-      setError("La contraseña debe contener al menos un carácter especial");
+      setError(
+        "La contraseña debe contener al menos un carácter especial."
+      );
       return;
     }
 
-    if (password !== form.confirmPassword) {
-      setError("Las contraseñas no coinciden");
+    if (
+      password !==
+      form.confirmPassword
+    ) {
+      setError(
+        "Las contraseñas no coinciden."
+      );
+      return;
+    }
+
+    /*
+     * No permitimos actualizar si el contexto
+     * ya no considera válida la recuperación.
+     */
+    if (!isRecoverySession) {
+      setError(
+        "El enlace de recuperación ya no es válido. Solicita uno nuevo."
+      );
       return;
     }
 
     setLoading(true);
 
     try {
-      const result = await updatePassword(password);
+      const result =
+        await updatePassword(password);
 
       if (!result.success) {
         setError(
-          result.error || "Error al actualizar la contraseña"
+          result.error ||
+            "Error al actualizar la contraseña."
         );
         return;
       }
 
-      setSuccess("¡Contraseña actualizada exitosamente!");
+      setSuccess(
+        "¡Contraseña actualizada correctamente!"
+      );
 
+      /*
+       * Cerramos la sesión de recuperación
+       * después de actualizar la contraseña.
+       */
       setTimeout(async () => {
         await signOut();
-        setLocation("/auth");
-      }, 2000);
-    } catch (err: any) {
+
+        setLocation("/login");
+      }, 1500);
+    } catch (error) {
+      console.error(
+        "[ResetPassword] Update password error:",
+        error
+      );
+
       setError(
-        err.message || "Error al actualizar la contraseña"
+        "Error al actualizar la contraseña."
       );
     } finally {
       setLoading(false);
     }
   };
 
-  if (checkingToken) {
+  /**
+   * ============================================================
+   * LOADING
+   * ============================================================
+   */
+  if (
+    authLoading ||
+    checkingToken
+  ) {
     return (
       <div className="min-h-screen bg-gradient-to-br from-white via-[#F5F7FA] to-white flex items-center justify-center p-4">
         <Card className="w-full max-w-md border-2 border-gray-200 shadow-xl">
           <div className="p-8 text-center">
-            <div className="inline-block animate-spin rounded-full h-12 w-12 border-b-2 border-[#1E3A8A]"></div>
+            <div className="inline-block animate-spin rounded-full h-12 w-12 border-b-2 border-[#1E3A8A]" />
 
             <p className="mt-4 text-gray-600">
               Verificando enlace...
@@ -171,11 +299,17 @@ export default function ResetPassword() {
     );
   }
 
+  /**
+   * ============================================================
+   * TOKEN INVÁLIDO
+   * ============================================================
+   */
   if (!validToken) {
     return (
       <div className="min-h-screen bg-gradient-to-br from-white via-[#F5F7FA] to-white flex items-center justify-center p-4">
         <Card className="w-full max-w-md border-2 border-gray-200 shadow-xl">
           <div className="p-8">
+
             <div className="mb-6 p-4 bg-red-50 border-l-4 border-red-500 rounded">
               <div className="flex gap-3">
                 <AlertCircle className="h-5 w-5 text-red-600 flex-shrink-0 mt-0.5" />
@@ -187,23 +321,31 @@ export default function ResetPassword() {
             </div>
 
             <Button
-              onClick={() => setLocation("/auth")}
+              onClick={() =>
+                setLocation("/login")
+              }
               className="w-full bg-[#1E3A8A] hover:bg-[#1E3A8A]/90 text-white font-semibold py-2"
             >
               Volver al login
             </Button>
+
           </div>
         </Card>
       </div>
     );
   }
 
+  /**
+   * ============================================================
+   * FORMULARIO
+   * ============================================================
+   */
   return (
     <div className="min-h-screen bg-gradient-to-br from-white via-[#F5F7FA] to-white flex items-center justify-center p-4">
       <Card className="w-full max-w-md border-2 border-gray-200 shadow-xl">
         <div className="p-8">
 
-          {/* Header */}
+          {/* HEADER */}
           <div className="mb-8 text-center">
             <h1 className="text-3xl font-bold text-[#1E3A8A] mb-2">
               Modira
@@ -214,7 +356,7 @@ export default function ResetPassword() {
             </p>
           </div>
 
-          {/* Error Alert */}
+          {/* ERROR */}
           {error && (
             <div className="mb-6 p-4 bg-red-50 border-l-4 border-red-500 rounded">
               <div className="flex gap-3">
@@ -227,7 +369,7 @@ export default function ResetPassword() {
             </div>
           )}
 
-          {/* Success Alert */}
+          {/* SUCCESS */}
           {success && (
             <div className="mb-6 p-4 bg-green-50 border-l-4 border-green-500 rounded">
               <div className="flex gap-3">
@@ -240,13 +382,14 @@ export default function ResetPassword() {
             </div>
           )}
 
-          {/* Reset Password Form */}
           <form
-            onSubmit={handleResetPassword}
+            onSubmit={
+              handleResetPassword
+            }
             className="space-y-4"
           >
 
-            {/* New Password */}
+            {/* NUEVA CONTRASEÑA */}
             <div>
               <label className="block text-sm font-semibold text-gray-700 mb-2">
                 Nueva contraseña
@@ -254,27 +397,41 @@ export default function ResetPassword() {
 
               <div className="relative">
                 <Input
-                  type={showPassword ? "text" : "password"}
+                  type={
+                    showPassword
+                      ? "text"
+                      : "password"
+                  }
                   placeholder="••••••••"
                   value={form.password}
                   onChange={(e) =>
                     setForm({
                       ...form,
-                      password: e.target.value,
+                      password:
+                        e.target.value,
                     })
                   }
                   required
-                  disabled={loading || authLoading}
+                  autoComplete="new-password"
+                  disabled={
+                    loading ||
+                    authLoading
+                  }
                   className="w-full pr-10"
                 />
 
                 <button
                   type="button"
                   onClick={() =>
-                    setShowPassword(!showPassword)
+                    setShowPassword(
+                      !showPassword
+                    )
                   }
                   className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-500 hover:text-gray-700"
-                  disabled={loading || authLoading}
+                  disabled={
+                    loading ||
+                    authLoading
+                  }
                   aria-label={
                     showPassword
                       ? "Ocultar contraseña"
@@ -289,13 +446,12 @@ export default function ResetPassword() {
                 </button>
               </div>
 
-              {/* Password requirements / strength indicator */}
               <PasswordStrengthIndicator
                 password={form.password}
               />
             </div>
 
-            {/* Confirm Password */}
+            {/* CONFIRMAR CONTRASEÑA */}
             <div>
               <label className="block text-sm font-semibold text-gray-700 mb-2">
                 Confirmar contraseña
@@ -309,15 +465,22 @@ export default function ResetPassword() {
                       : "password"
                   }
                   placeholder="••••••••"
-                  value={form.confirmPassword}
+                  value={
+                    form.confirmPassword
+                  }
                   onChange={(e) =>
                     setForm({
                       ...form,
-                      confirmPassword: e.target.value,
+                      confirmPassword:
+                        e.target.value,
                     })
                   }
                   required
-                  disabled={loading || authLoading}
+                  autoComplete="new-password"
+                  disabled={
+                    loading ||
+                    authLoading
+                  }
                   className="w-full pr-10"
                 />
 
@@ -329,7 +492,10 @@ export default function ResetPassword() {
                     )
                   }
                   className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-500 hover:text-gray-700"
-                  disabled={loading || authLoading}
+                  disabled={
+                    loading ||
+                    authLoading
+                  }
                   aria-label={
                     showConfirmPassword
                       ? "Ocultar confirmación de contraseña"
@@ -345,28 +511,38 @@ export default function ResetPassword() {
               </div>
             </div>
 
-            {/* Submit */}
+            {/* SUBMIT */}
             <Button
               type="submit"
               className="w-full bg-[#1E3A8A] hover:bg-[#1E3A8A]/90 text-white font-semibold py-2"
-              disabled={loading || authLoading}
+              disabled={
+                loading ||
+                authLoading
+              }
             >
-              {loading || authLoading
+              {loading ||
+              authLoading
                 ? "Actualizando contraseña..."
                 : "Actualizar contraseña"}
             </Button>
 
-            {/* Back to login */}
+            {/* VOLVER */}
             <p className="text-center text-sm text-gray-600 pt-4">
               <button
                 type="button"
-                onClick={() => setLocation("/auth")}
+                onClick={() =>
+                  setLocation("/login")
+                }
                 className="text-[#1E3A8A] hover:underline font-semibold"
-                disabled={loading || authLoading}
+                disabled={
+                  loading ||
+                  authLoading
+                }
               >
                 Volver al login
               </button>
             </p>
+
           </form>
         </div>
       </Card>
