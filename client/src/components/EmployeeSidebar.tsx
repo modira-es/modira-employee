@@ -502,6 +502,25 @@ export default function EmployeeSidebar({
 
       /**
        * ======================================================
+       * MARKETING Y ADQUISICIÓN
+       * ======================================================
+       */
+      if (hasPermission("marketing.dashboard.read")) {
+        groups.push({
+          title: "Marketing",
+          items: [
+            {
+              id: "marketing",
+              label: "Marketing & adquisición",
+              route: "/employee/marketing",
+              icon: BarChart3,
+            },
+          ],
+        });
+      }
+
+      /**
+       * ======================================================
        * SISTEMA
        * ======================================================
        */
