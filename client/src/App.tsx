@@ -30,6 +30,7 @@ import WorkersProfilesArea from "./areas/shared/worker-profiles/WorkersProfilesA
 import RolesPermissions from "./areas/shared/roles-permissions/RolesPermissions";
 import AuditRequestsPage from "./areas/shared/audit-requests/AuditRequestsPage";
 import EmployeePayroll from "./areas/shared/payroll/EmployeePayroll";
+import MarketingDashboard from "./areas/marketing/MarketingDashboard";
 
 import { Toaster } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
@@ -472,6 +473,18 @@ function Router() {
     </EmployeeRoute>
   )}
 />
+
+      {/* ==========================================================
+          MARKETING Y ADQUISICIÓN
+         ========================================================== */}
+      <Route
+        path="/employee/marketing"
+        component={() => (
+          <EmployeeRoute requiredPermission="marketing.dashboard.read">
+            <MarketingDashboard />
+          </EmployeeRoute>
+        )}
+      />
 
       {/* ==========================================================
           MÓDULOS FUTUROS — rutas preparadas para el Sidebar
